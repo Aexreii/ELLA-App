@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "171762935926",
+    "project_id": "ella-lietracy-app",
+    "storage_bucket": "ella-lietracy-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:171762935926:android:5086c68970e775ba255757",
+        "android_client_info": {
+          "package_name": "com.ella.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "171762935926-2ekr3fc70o6jrtlqosev3u6rgm7khh8f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDFgY7kWGu9qUCyNfh02IIQj79CPTP9tTI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "171762935926-2ekr3fc70o6jrtlqosev3u6rgm7khh8f.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
