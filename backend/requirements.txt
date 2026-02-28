@@ -1,0 +1,21 @@
+# ELLA Backend - Python Dependencies
+
+# Core Flask framework
+Flask==3.0.0
+flask-cors==4.0.0
+
+# Firebase Admin SDK for authentication and Firestore database
+firebase-admin==6.3.0
+
+# Google Cloud Speech-to-Text API for voice recognition
+google-cloud-speech==2.23.0
+
+# Environment variables management
+python-dotenv==1.0.0
+
+# Additional utilities
+Werkzeug==3.0.1
+gunicorn==21.2.0
+
+# Date/time utilities (included with Python but explicit for clarity)
+python-dateutil==2.8.2

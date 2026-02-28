@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ELLA - Speech Pronunciation Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #333;
+        }
+        .form-group {
+            margin: 20px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="file"],
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+        }
+        .error {
+            border-left-color: #f44336;
+            background-color: #ffebee;
+        }
+        .success {
+            border-left-color: #4CAF50;
+            background-color: #e8f5e9;
+        }
+        .loading {
+            display: none;
+            margin-top: 10px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2> ELLA Pronunciation Test</h2>
+        <p>To test the speech recognition and pronunciation evaluation without the frontend app.</p>
+        
+        <div class="form-group">
+            <label for="audioFile">Select Audio File (WAV recommended):</label>
+            <input type="file" id="audioFile" accept="audio/*">
+        </div>
+        
+        <div class="form-group">
+            <label for="expectedWord">Expected Word:</label>
+            <input type="text" id="expectedWord" placeholder="Enter the word to test" value="hello">
+        </div>
+        
+        <button onclick="testSpeech()" id="testButton">Test Pronunciation</button>
+        <div class="loading" id="loading"> Processing audio...</div>
+        
+        <div id="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        async function testSpeech() {
+            const fileInput = document.getElementById('audioFile');
+            const wordInput = document.getElementById('expectedWord');
+            const resultDiv = document.getElementById('result');
+            const button = document.getElementById('testButton');
+            const loading = document.getElementById('loading');
+            
+            // Validation
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Please select an audio file');
+                return;
+            }
+            
+            const word = wordInput.value.trim();
+            if (!word) {
+                alert('Please enter an expected word');
+                return;
+            }
+            
+            // Show loading
+            button.disabled = true;
+            loading.style.display = 'block';
+            resultDiv.style.display = 'none';
+            
+            try {
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('audio', file);
+                formData.append('expectedWord', word);
+                
+                const response = await fetch('http://localhost:5000/api/speech/test-file', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                // Display result
+                resultDiv.style.display = 'block';
+                resultDiv.className = result.success && result.correct ? 'success' : (result.success ? '' : 'error');
+                
+                if (result.success) {
+                    resultDiv.textContent = `
+✅ SUCCESS!
+
+Expected Word: ${result.expected}
+What You Said: ${result.transcript}
+Correct: ${result.correct ? 'YES ✓' : 'NO ✗'}
+Confidence: ${(result.confidence * 100).toFixed(1)}%
+Similarity: ${(result.similarity * 100).toFixed(1)}%
+Score: ${result.score}/100
+
+Message: ${result.message}
+`;
+                } else {
+                    resultDiv.textContent = `
+❌ ERROR
+
+${result.error || 'Failed to process audio'}
+
+Make sure:
+1. Backend server is running on http://localhost:5000
+2. Google Cloud Speech API credentials are configured
+3. Audio file is in a supported format (WAV, 16kHz recommended)
+`;
+                }
+                
+            } catch (error) {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'error';
+                resultDiv.textContent = `
+❌ CONNECTION ERROR
+
+${error.message}
+
+Make sure the backend server is running:
+cd BackEnd
+python app.py
+`;
+            } finally {
+                button.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+        
+        // Allow Enter key to trigger test
+        document.getElementById('expectedWord').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testSpeech();
+            }
+        });
+    </script>
+</body>
+</html>

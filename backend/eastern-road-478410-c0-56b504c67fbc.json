@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "eastern-road-478410-c0",
+  "private_key_id": "56b504c67fbcd02bf4d08db8aabe1a7083458c3a",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC+J4W93mgDdHMg\nMpxHH0y/hzSC4Th/3MVmUAj6RFyWDnaHLBBEyfdMGJ3EGlluhETF4UA3xU+49W/k\nsJD2KkKmiI4fuTIA9ZfiJrTA8obnr6xm5pzSkoB2BnBBTRB194qAWqjNcRgaJ6Ps\ny8F0s7fPuYljfGv2pGnsDmfzc/XAoHHh105XMrxGZsH6fOvckvN9B+5AdS3O5noW\nG4W3co5tpOwxFhpZ+OzVbWRvx3sEsHDmUn45wSr+IToFJg5MF6sHyBzP65w4p635\nJwaYXVsdLNtaGWatYrXz3p0aANbczHjVSmeciLq2IooJKVpodIvhBMwU7dsvx+1e\nmPSdG0/LAgMBAAECggEAMLJvaj38VjIqz4qWghJOddg6xu/Fp90Sgo6pleoO6fDf\nQuOycONmHQtKz+9NiuN9t01lxEKYFY5pbuAW56vP8NUUzKQBXcSHdoeiD62shcXz\n+VBCxhx1oIQqmFaTihpwUkmlZCN74CrZrKlLrEbgImbp+9vfzESzyZuw3GSMgZ1D\nuUXF7T2jDrHnvYs/qo8OkpOVRplS7+M0/f5YwkVFwnCfBT/Mv9STF0cIf5lqKyXc\nDS9lN3jNCCRHjJgJUXoHkb1swG8RjYVTVSDj33gIfRBsWbYWvoQczPWY0LWGxPB7\n5ul0yoviY7Qe3SQcOHhJAoxBE4N26Is2cYRz1xsc+QKBgQDyjM4jCmoZtW1rS11Y\nxyaCrrSpJgHsgQHLgf7mHiAFRjBP6a9lkzIMfTiA6hIFkEKaOjJNe0LpftHJ/lf8\nD/c5swGQVlnnYzSDMTLh7TM/DzBWYLsG+aaa7IRgbd5+aL12nGi2YuPvT6w0xXjW\ngPXR9iG06h7NKt95CuXsEKXncwKBgQDIsusl5m9DQJ0co6c3iaQY3MCXSq/BgM5M\nxdToQVG9/M9KZQ5QifU5WTgSi6a2bpQ+Jgd1g77l+Nt5InUd24YQzEahAfcEe+ai\nmD0ZQu8cgMwy8OWAY0jdH332kIlAL6zbiMttZQsuiUjscuvKctL8Csrf1SWcCln9\nqYHSTs5wSQKBgFGz1IxBKdRXJPCLhnotO2+x4fFIeEVuf2hJ9c8WPrsIFaYVlZul\npapHVA04y7FMEuNYzzECYFu++HQOVRz3U9P/1HsGW2pyJHI81GL+P9DyENpH4zhK\nSDDPkxfYaqYyKgAWV794OEeYku2Dx1yaPDPpsRj79DwwQO7JGQIX6Yq5AoGBAJ0N\nzg/hjI3vQUNJGbDPSBegoCGEc5cUSdwwL9T0UJhA/qH0BMinvLt9AvEYUYSPcfhU\nYB/o0fk6zdy0RzvvLrF0eYzDcd8Taj8wrRdYlq8SZzkx5BadG0bWvwa0woL1C+rb\n2H0pxh9LlUJbCANr6YkMlQelz4GVZCipfgrqWofpAoGAZoWZ+39MEIDpJY4AsaCZ\nr74ZOXKzHwGmNqYI4w9HJvGRniNocAl7jpbjGJPXJn4MFTl8sYqyrK7aOxAs1QCX\n352AKJ8PqfhYYq78QtrEC+jTqA3qkbjTyzkIIiLWU99yeYwwYY2q44u55rU8NI3g\n0DawBGddzTaVOAOCrWk6es0=\n-----END PRIVATE KEY-----\n",
+  "client_email": "ella-speech-service@eastern-road-478410-c0.iam.gserviceaccount.com",
+  "client_id": "112039606613073814442",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/ella-speech-service%40eastern-road-478410-c0.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

@@ -1,0 +1,31 @@
+# Python virtual environment
+venv/
+env/
+*.pyc
+__pycache__/
+
+# Environment variables
+.env
+
+# Firebase and Google Cloud credentials (NEVER commit these!)
+*service-account*.json
+*credentials*.json
+firebase-adminsdk-*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test_audio/
+*.wav
+*.mp3

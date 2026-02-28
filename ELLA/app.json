@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "ELLA",
+    "slug": "ELLA",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icons/ELLA_LOGO.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/icons/ELLA_LOGO.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icons/ELLA_LOGO.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/icons/ELLA_LOGO.png"
+    }
+  }
+}
