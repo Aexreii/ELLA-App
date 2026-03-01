@@ -4,11 +4,11 @@
     "slug": "ELLA",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icons/ELLA_LOGO.png",
+    "icon": "./assets/icons/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/icons/ELLA_LOGO.png",
+      "image": "./assets/icons/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -23,13 +23,13 @@
       "googleServicesFile": "./google-services.json",
       "package": "com.ella.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icons/ELLA_LOGO.png",
+        "foregroundImage": "./assets/icons/logo.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/icons/ELLA_LOGO.png"
+      "favicon": "./assets/icons/logo.png"
     },
     "plugins": [
       "@react-native-firebase/app",

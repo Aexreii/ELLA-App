@@ -34,6 +34,7 @@ export default function StartUp({ navigation }) {
     PoppinsBold: require("../assets/fonts/Poppins-Bold.ttf"),
     Mochi: require("../assets/fonts/MochiyPopOne.ttf"),
   });
+  const auth = getAuth(app);
 
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState("");
@@ -71,13 +72,18 @@ export default function StartUp({ navigation }) {
   };
 
   const handleEmailSignIn = async () => {
-    if (!email || !password) {
+    if (!showEmailForm) {
+      setShowEmailForm(true);
+      return;
+    }
+
+    if (!email.trim() || !password) {
       Alert.alert("Error", "Please enter email and password");
       return;
     }
 
     try {
-      setLoading(true);
+      setIsSubmitting(true);
 
       const response = await signInWithEmailAndPassword(
         auth,
@@ -86,29 +92,27 @@ export default function StartUp({ navigation }) {
       );
 
       console.log("User signed in:", response.user.uid);
-
-      Alert.alert("Success", "Signed in successfully!");
-
-      // Navigate after successful login
-      //backend stuff
-
       navigation.navigate("HomeScreen");
     } catch (error) {
       console.log(error);
-
-      if (error.code === "auth/user-not-found") {
-        Alert.alert("Error", "No account found with this email");
-      } else if (error.code === "auth/wrong-password") {
-        Alert.alert("Error", "Incorrect password");
-      } else if (error.code === "auth/invalid-email") {
-        Alert.alert("Error", "Invalid email address");
-      } else {
-        Alert.alert("Error", error.message);
+      switch (error.code) {
+        case "auth/user-not-found":
+          Alert.alert("Error", "No account found with this email");
+          break;
+        case "auth/wrong-password":
+          Alert.alert("Error", "Incorrect password");
+          break;
+        case "auth/invalid-email":
+          Alert.alert("Error", "Invalid email address");
+          break;
+        default:
+          Alert.alert("Error", error.message);
       }
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
+
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
@@ -153,7 +157,9 @@ export default function StartUp({ navigation }) {
           default:
             Alert.alert(
               error.code,
-              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
+              "git gud"[
+                { text: "OK", onPress: () => console.log("OK Pressed") }
+              ],
               { cancelable: true },
             );
         }
@@ -203,7 +209,11 @@ export default function StartUp({ navigation }) {
         </View>
       ) : null}
 
-      <TouchableOpacity style={styles.buttonEmail} onPress={handleEmailSignIn}>
+      <TouchableOpacity
+        style={styles.buttonEmail}
+        onPress={handleEmailSignIn}
+        disabled={isSubmitting}
+      >
         <Ionicons name="mail" style={styles.iconEmail} />
         <Text style={styles.buttonText}>Sign in with Email</Text>
       </TouchableOpacity>

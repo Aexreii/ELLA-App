@@ -32,25 +32,7 @@ export default function SignUp() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  WebBrowser.maybeCompleteAuthSession();
-  useEffect(() => {
-    if (response?.type === "success") {
-      const { id_token } = response.authentication;
-
-      const credential = GoogleAuthProvider.credential(id_token);
-
-      signInWithCredential(auth, credential)
-        .then((result) => {
-          console.log("Google Sign-In Success:", result.user.uid);
-          navigation.navigate("NameEntry");
-        })
-        .catch((error) => {
-          console.log(error);
-          Alert.alert("Google Error", error.message);
-        });
-    }
-  }, [response]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleEmailSignUp = async () => {
     if (!email || !password) {
@@ -90,8 +72,59 @@ export default function SignUp() {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    promptAsync({ useProxy: true });
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsSubmitting(true);
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+
+      if (isSuccessResponse(response)) {
+        const { idToken, user } = response.data;
+        const { name, email, photo } = user;
+
+        //this is the part where you do the backend part
+        //pass the id token of the user to the backend to get their stuff.
+
+        navigation.navigate("HomeScreen");
+      } else {
+        Alert.alert(
+          "Login Failed", // title
+          "Your Google sign-in was unsuccessful. Please try again.", // message
+          [{ text: "OK", onPress: () => console.log("OK Pressed") }], // buttons
+          { cancelable: true }, // allows closing by tapping outside
+        );
+      }
+
+      setIsSubmitting(false);
+    } catch (error) {
+      if (isErrorWithCode(error)) {
+        switch (error.code) {
+          case statusCodes.IN_PROGRESS:
+            Alert.alert(
+              "Your Google sign-in is in progress",
+              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
+              { cancelable: true },
+            );
+            break;
+          case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+            Alert.alert(
+              "Play services not available",
+              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
+              { cancelable: true },
+            );
+            break;
+          default:
+            Alert.alert(
+              error.code,
+              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
+              { cancelable: true },
+            );
+        }
+      } else {
+        Alert.alert("You fucked up!");
+      }
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -158,6 +191,7 @@ export default function SignUp() {
       <TouchableOpacity
         style={styles.buttonGoogle}
         onPress={handleGoogleSignIn}
+        disabled={isSubmitting}
       >
         <Image
           style={styles.iconGoogle}
