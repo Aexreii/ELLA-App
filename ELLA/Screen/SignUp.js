@@ -1,39 +1,102 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
-
+import * as Google from "expo-auth-session/providers/google";
+import * as WebBrowser from "expo-web-browser";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import app from "../firebaseconfig";
+
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import {
+  GoogleSignin,
+  isSuccessResponse,
+  isErrorWithCode,
+  statusCodes,
+} from "@react-native-google-signin/google-signin";
+
+const auth = getAuth(app);
 
 export default function SignUp() {
   const navigation = useNavigation();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  //custom functions:
-  const handleEmailSignIn = () => {
-    // TODO: Add email sign-in gagawin ni Vik
-    console.log("Email Sign");
-    navigation.navigate("NameEntry");
+  WebBrowser.maybeCompleteAuthSession();
+  useEffect(() => {
+    if (response?.type === "success") {
+      const { id_token } = response.authentication;
+
+      const credential = GoogleAuthProvider.credential(id_token);
+
+      signInWithCredential(auth, credential)
+        .then((result) => {
+          console.log("Google Sign-In Success:", result.user.uid);
+          navigation.navigate("NameEntry");
+        })
+        .catch((error) => {
+          console.log(error);
+          Alert.alert("Google Error", error.message);
+        });
+    }
+  }, [response]);
+
+  const handleEmailSignUp = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter email and password");
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert("Error", "Password must be at least 6 characters");
+      return;
+    }
+    try {
+      setLoading(true);
+      const response = await createUserWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password,
+      );
+      console.log("User created:", response.user.uid);
+      Alert.alert("Success", "Account created successfully!");
+
+      // do the backend here, same with passing on the account id
+
+      navigation.navigate("NameEntry");
+    } catch (error) {
+      console.log(error);
+      if (error.code === "auth/email-already-in-use") {
+        Alert.alert("Error", "Email is already in use");
+      } else if (error.code === "auth/invalid-email") {
+        Alert.alert("Error", "Invalid email address");
+      } else if (error.code === "auth/weak-password") {
+        Alert.alert("Error", "Password is too weak");
+      } else {
+        Alert.alert("Error", error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGoogleSignIn = () => {
-    // TODO: Add Google sign-in
-
-    console.log("Google Sign");
-    navigation.navigate("NameEntry"); //for backend make this a conditional statement (if authOK ==> proceed to NameEntry)
+    promptAsync({ useProxy: true });
   };
 
   return (
     <View style={styles.container}>
-      {/* Close button (X) */}
+      {/* Back Button */}
       <TouchableOpacity
         style={styles.closeButton}
         onPress={() => navigation.goBack()}
@@ -43,7 +106,7 @@ export default function SignUp() {
 
       <Text style={styles.title}>Enter your details</Text>
 
-      {/* Email input */}
+      {/* Email */}
       <View style={styles.inputBox}>
         <TextInput
           style={styles.input}
@@ -51,10 +114,12 @@ export default function SignUp() {
           placeholderTextColor="#aaa"
           value={email}
           onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
         />
       </View>
 
-      {/* Password input */}
+      {/* Password */}
       <View style={styles.inputBox}>
         <TextInput
           style={styles.input}
@@ -73,14 +138,23 @@ export default function SignUp() {
         </TouchableOpacity>
       </View>
 
-      {/* Email Sign Up button */}
-      {/* Email Sign Up button */}
-      <TouchableOpacity style={styles.buttonEmail} onPress={handleEmailSignIn}>
-        <Ionicons name="mail" size={32} color="#fff" style={styles.icon} />
-        <Text style={styles.buttonText}>Sign Up</Text>
+      {/* Email Sign Up Button */}
+      <TouchableOpacity
+        style={[styles.buttonEmail, loading && { opacity: 0.7 }]}
+        onPress={handleEmailSignUp}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <Ionicons name="mail" size={24} color="#fff" style={styles.icon} />
+            <Text style={styles.buttonText}>Sign Up</Text>
+          </>
+        )}
       </TouchableOpacity>
 
-      {/* Google Sign Up button */}
+      {/* Google Sign Up Button */}
       <TouchableOpacity
         style={styles.buttonGoogle}
         onPress={handleGoogleSignIn}
@@ -89,9 +163,12 @@ export default function SignUp() {
           style={styles.iconGoogle}
           source={require("../assets/icons/google.png")}
         />
-        <Text style={[styles.buttonText, styles.googleText]}>Sign Up</Text>
+        <Text style={[styles.buttonText, styles.googleText]}>
+          Sign Up with Google
+        </Text>
       </TouchableOpacity>
 
+      {/* GIF */}
       <Image
         source={require("../assets/animations/jump_owl.gif")}
         style={styles.gif}
@@ -171,14 +248,12 @@ const styles = StyleSheet.create({
     borderColor: "#FF9149",
   },
   icon: {
-    marginLeft: -20,
-    marginRight: 30,
+    marginRight: 10,
   },
   iconGoogle: {
-    marginLeft: -20,
-    marginRight: 30,
-    width: 32,
-    height: 32,
+    marginRight: 10,
+    width: 24,
+    height: 24,
   },
   buttonText: {
     fontFamily: "Poppins",
