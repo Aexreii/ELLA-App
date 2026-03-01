@@ -3,6 +3,8 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "react-native";
+import { useEffect } from "react";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 import StartUp from "./Screen/StartUp";
 import SignUp from "./Screen/SignUp";
@@ -13,6 +15,14 @@ import HomeScreen from "./Screen/HomeScreen";
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  useEffect(() => {
+    GoogleSignin.configure({
+      webClientId:
+        "553615369502-0pnceg6t2egegfk8hi70q5861h1rkrg4.apps.googleusercontent.com",
+      profileImageSize: 150,
+    });
+  });
+
   return (
     <SafeAreaProvider>
       <StatusBar

@@ -1,33 +1,33 @@
 {
   "project_info": {
-    "project_number": "885030597679",
-    "project_id": "ella-e7cd5",
-    "storage_bucket": "ella-e7cd5.firebasestorage.app"
+    "project_number": "171762935926",
+    "project_id": "ella-lietracy-app",
+    "storage_bucket": "ella-lietracy-app.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:885030597679:android:cd6223f1904fbb724c82da",
+        "mobilesdk_app_id": "1:171762935926:android:5086c68970e775ba255757",
         "android_client_info": {
           "package_name": "com.ella.app"
         }
       },
       "oauth_client": [
         {
-          "client_id": "885030597679-elkhj46ae65me2vl7puvsqh0hq1gjg3i.apps.googleusercontent.com",
+          "client_id": "171762935926-2ekr3fc70o6jrtlqosev3u6rgm7khh8f.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBji96XTWXHS4U4SXk9u370xEqgZI6oLl4"
+          "current_key": "AIzaSyDFgY7kWGu9qUCyNfh02IIQj79CPTP9tTI"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "885030597679-elkhj46ae65me2vl7puvsqh0hq1gjg3i.apps.googleusercontent.com",
+              "client_id": "171762935926-2ekr3fc70o6jrtlqosev3u6rgm7khh8f.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

@@ -6,12 +6,25 @@ import {
   TouchableOpacity,
   TextInput,
 } from "react-native";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFonts } from "expo-font";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
 import { Alert } from "react-native";
+import app from "../firebaseconfig";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+} from "firebase/auth";
+
+import {
+  GoogleSignin,
+  isSuccessResponse,
+  isErrorWithCode,
+  statusCodes,
+} from "@react-native-google-signin/google-signin";
 
 export default function StartUp({ navigation }) {
   const [fontsLoaded] = useFonts({
@@ -25,58 +38,129 @@ export default function StartUp({ navigation }) {
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  let authOK = 0; //this variable shoudld be changed by the backend for auth.
-
-  const isAuthOK = () => {
-    //this will be handled in the backend and will change the value of authOK to 1
-    // this will check if the user exist, if google and not exist proceed to signup, if exist proceed to home screen.
-    //if email and not extst error of account does not exist. then proceed to sign up
-  };
-
-  const handleForgetPass = () => {
-    // TODO: Add forgot password functionality
-  };
-
-  const handleEmailSignIn = () => {
-    if (!showEmailForm) {
-      setShowEmailForm(true);
+  const handleForgotPass = async () => {
+    if (!email) {
+      Alert.alert("Error", "Please enter your email address first.");
       return;
     }
-    console.log("Email:", email);
-    console.log("Password:", password);
 
-    authOK = 1; //to be handled on the backend.
-    if (authOK == 1) {
-      //also pass on the data of the user and stuff. or it can be handled directly on the main screen.
-      navigation.navigate("HomeScreen");
-    } else {
-      console.log("wrong password");
+    try {
+      setLoading(true);
+
+      await sendPasswordResetEmail(auth, email.trim());
+
       Alert.alert(
-        "Login Failed", // title
-        "Your Email sign-in was unsuccessful. Please try again.", // message
-        [{ text: "OK", onPress: () => console.log("OK Pressed") }], // buttons
-        { cancelable: true }, // allows closing by tapping outside
+        "Password Reset Email Sent",
+        "Please check your inbox and follow the instructions to reset your password.",
       );
+    } catch (error) {
+      console.log(error);
+
+      if (error.code === "auth/user-not-found") {
+        Alert.alert("Error", "No account found with this email.");
+      } else if (error.code === "auth/invalid-email") {
+        Alert.alert("Error", "Invalid email address.");
+      } else {
+        Alert.alert("Error", error.message);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleGoogleSignIn = () => {
-    console.log("Google Sign");
+  const handleEmailSignIn = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter email and password");
+      return;
+    }
 
-    authOK = 1; //to be handled on the backend.
+    try {
+      setLoading(true);
 
-    if (authOK == 1) {
-      //also pass on the data of the user and stuff. or it can be handled directly on the main screen.
-      navigation.navigate("HomeScreen");
-    } else {
-      console.log("wrong password");
-      Alert.alert(
-        "Login Failed", // title
-        "Your Google sign-in was unsuccessful. Please try again.", // message
-        [{ text: "OK", onPress: () => console.log("OK Pressed") }], // buttons
-        { cancelable: true }, // allows closing by tapping outside
+      const response = await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password,
       );
+
+      console.log("User signed in:", response.user.uid);
+
+      Alert.alert("Success", "Signed in successfully!");
+
+      // Navigate after successful login
+      //backend stuff
+
+      navigation.navigate("HomeScreen");
+    } catch (error) {
+      console.log(error);
+
+      if (error.code === "auth/user-not-found") {
+        Alert.alert("Error", "No account found with this email");
+      } else if (error.code === "auth/wrong-password") {
+        Alert.alert("Error", "Incorrect password");
+      } else if (error.code === "auth/invalid-email") {
+        Alert.alert("Error", "Invalid email address");
+      } else {
+        Alert.alert("Error", error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsSubmitting(true);
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+
+      if (isSuccessResponse(response)) {
+        const { idToken, user } = response.data;
+        const { name, email, photo } = user;
+
+        //this is the part where you do the backend part
+        //pass the id token of the user to the backend to get their stuff.
+
+        navigation.navigate("HomeScreen");
+      } else {
+        Alert.alert(
+          "Login Failed", // title
+          "Your Google sign-in was unsuccessful. Please try again.", // message
+          [{ text: "OK", onPress: () => console.log("OK Pressed") }], // buttons
+          { cancelable: true }, // allows closing by tapping outside
+        );
+      }
+
+      setIsSubmitting(false);
+    } catch (error) {
+      if (isErrorWithCode(error)) {
+        switch (error.code) {
+          case statusCodes.IN_PROGRESS:
+            Alert.alert(
+              "Your Google sign-in is in progress",
+              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
+              { cancelable: true },
+            );
+            break;
+          case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+            Alert.alert(
+              "Play services not available",
+              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
+              { cancelable: true },
+            );
+            break;
+          default:
+            Alert.alert(
+              error.code,
+              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
+              { cancelable: true },
+            );
+        }
+      } else {
+        Alert.alert("You fucked up!");
+      }
+      setIsSubmitting(false);
     }
   };
 
@@ -113,7 +197,7 @@ export default function StartUp({ navigation }) {
             value={password}
             onChangeText={setPassword}
           />
-          <TouchableOpacity onPress={handleForgetPass}>
+          <TouchableOpacity onPress={handleForgotPass}>
             <Text style={styles.forgetPass}>Forgot Password?</Text>
           </TouchableOpacity>
         </View>
@@ -127,6 +211,7 @@ export default function StartUp({ navigation }) {
       <TouchableOpacity
         style={styles.buttonGoogle}
         onPress={handleGoogleSignIn}
+        disabled={isSubmitting}
       >
         <Image
           style={styles.iconGoogle}

@@ -13,9 +13,15 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ella.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
+      "package": "com.ella.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icons/ELLA_LOGO.png",
         "backgroundColor": "#ffffff"
@@ -24,6 +30,17 @@
     },
     "web": {
       "favicon": "./assets/icons/ELLA_LOGO.png"
+    },
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-firebase/crashlytics",
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8a72d287-513b-4768-bd90-72a18857b789"
+      }
     }
   }
 }
