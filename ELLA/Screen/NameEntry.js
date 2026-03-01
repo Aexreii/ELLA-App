@@ -5,6 +5,7 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Dimensions,
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -17,6 +18,7 @@ export default function SignUp() {
   const navigation = useNavigation();
   const [name, setName] = useState("");
   const [age, setAge] = useState(10);
+  const { width } = Dimensions.get("window");
 
   const handleNameEntry = () => {
     if (!name.trim()) {
@@ -48,21 +50,26 @@ export default function SignUp() {
         onChangeText={setName}
       />
 
-      <Text style={styles.title}>How old are you?{"\n"}</Text>
+      <Text style={styles.subtitle}>How old are you?{"\n"}</Text>
 
       <Text style={styles.ageText}>{age} years old</Text>
 
       <Slider
-        style={{ width: 300, height: 100 }} // height controls the thickness of the line
-        minimumValue={1}
-        maximumValue={100}
+        style={{ width: width * 0.8, height: 40 }} // responsive width, thinner height
+        minimumValue={3}
+        maximumValue={15}
         step={1}
         value={age}
         onValueChange={(value) => setAge(value)}
-        minimumTrackTintColor="#fff" // the left side of the slider (filled portion)
-        maximumTrackTintColor="#fff" // the right side (unfilled portion)
-        thumbTintColor="#FF9149" // the circle color
+        minimumTrackTintColor="#fff"
+        thumbTintColor="#FF9149"
+        trackStyle={{
+          height: 100,
+          borderRadius: 100,
+          backgroundColor: "#000000",
+        }}
       />
+
       <TouchableOpacity style={styles.button} onPress={handleNameEntry}>
         <Text style={styles.buttonText}>Enter</Text>
       </TouchableOpacity>
@@ -93,8 +100,15 @@ const styles = StyleSheet.create({
     fontFamily: "Mochi",
     fontSize: 36,
     textAlign: "center",
-    margin: 50,
+    marginVertical: 15,
     color: "#fff",
+  },
+  subtitle: {
+    fontFamily: "Mochi",
+    fontSize: 24,
+    textAlign: "center",
+    color: "#fff",
+    paddingTop: 60,
   },
   input: {
     backgroundColor: "#fff",
@@ -119,6 +133,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#fff",
     fontWeight: "bold",
+  },
+  ageText: {
+    fontFamily: "Mochi",
+    fontSize: 24,
+    color: "#fff",
   },
   gif: {
     width: 150,
