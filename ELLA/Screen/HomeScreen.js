@@ -13,7 +13,7 @@ import {
   Alert,
   ScrollView,
 } from "react-native";
-import { useFonts } from "expo-font";
+
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -26,14 +26,6 @@ import { get } from "react-native/Libraries/TurboModule/TurboModuleRegistry";
 import { Students, books } from "../Data/data";
 
 export default function HomeScreen() {
-  const [fontsLoaded] = useFonts({
-    PixelifySans: require("../assets/fonts/PixelifySans-Regular.ttf"),
-    PixelifySansBold: require("../assets/fonts/PixelifySans-Bold.ttf"),
-    Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
-    PoppinsBold: require("../assets/fonts/Poppins-Bold.ttf"),
-    Mochi: require("../assets/fonts/MochiyPopOne.ttf"),
-  });
-
   const currUser = Students[0]; //change this if we have a backend.
 
   const { recommended, teacherMaterials, studentUploads, appBooks } =
@@ -87,6 +79,7 @@ export default function HomeScreen() {
   }, []);
 
   const handleExitApp = () => {
+    setIsExitDialogOpen(false);
     BackHandler.exitApp();
   };
 
@@ -313,14 +306,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "flex-start",
-    paddingTop: 15,
   },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(96, 181, 255, 0.85)", // optional blue overlay for readability
     width: "100%",
     alignItems: "center",
-    paddingTop: 40,
   },
   header: {
     flexDirection: "row",

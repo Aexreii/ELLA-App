@@ -1,10 +1,13 @@
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { View, StatusBar } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { StatusBar } from "react-native";
 import { useEffect } from "react";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+
+import useAuth from "./hook/useAuth";
+import useAppFonts from "./hook/useAppFonts";
 
 import StartUp from "./Screen/StartUp";
 import SignUp from "./Screen/SignUp";
@@ -15,41 +18,50 @@ import HomeScreen from "./Screen/HomeScreen";
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  const { user, profile, loading } = useAuth();
+
   useEffect(() => {
     GoogleSignin.configure({
       webClientId:
-        "553615369502-0pnceg6t2egegfk8hi70q5861h1rkrg4.apps.googleusercontent.com",
-      profileImageSize: 150,
+        "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com",
     });
   });
 
   return (
     <SafeAreaProvider>
-      <StatusBar
-        translucent
-        backgroundColor="transparent"
-        barStyle="dark-content"
-      />
-      <NavigationContainer>
-        <SafeAreaView
-          style={{ flex: 1, backgroundColor: "#fff" }}
-          edges={["top"]}
-        >
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#60B5FF" }}>
+        <StatusBar
+          translucent
+          backgroundColor="transparent"
+          barStyle="dark-content"
+        />
+        <NavigationContainer>
           <Stack.Navigator
-            initialRouteName="StartUp"
             screenOptions={{
               headerShown: false,
               contentStyle: { backgroundColor: "#fff" },
             }}
           >
-            <Stack.Screen name="StartUp" component={StartUp} />
-            <Stack.Screen name="SignUp" component={SignUp} />
-            <Stack.Screen name="NameEntry" component={NameEntry} />
-            <Stack.Screen name="RoleSelect" component={RoleSelect} />
-            <Stack.Screen name="HomeScreen" component={HomeScreen} />
+            {!user ? (
+              // Not logged in → show login/signup flow
+              <>
+                <Stack.Screen name="StartUp" component={StartUp} />
+                <Stack.Screen name="SignUp" component={SignUp} />
+                <Stack.Screen name="NameEntry" component={NameEntry} />
+              </>
+            ) : !profile?.name || !profile?.role ? (
+              // Logged in but profile incomplete → show RoleSelect / NameEntry
+              <>
+                <Stack.Screen name="RoleSelect" component={RoleSelect} />
+                <Stack.Screen name="NameEntry" component={NameEntry} />
+              </>
+            ) : (
+              // Logged in with complete profile → go straight to Home
+              <Stack.Screen name="HomeScreen" component={HomeScreen} />
+            )}
           </Stack.Navigator>
-        </SafeAreaView>
-      </NavigationContainer>
+        </NavigationContainer>
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }

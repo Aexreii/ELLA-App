@@ -7,18 +7,23 @@ import {
   TextInput,
 } from "react-native";
 import { useEffect, useState } from "react";
-import { useFonts } from "expo-font";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
 import { Alert } from "react-native";
 import app from "../firebaseconfig";
+import useAppFonts from "../hook/useAppFonts";
+import { scale, verticalScale } from "../utils/scaling";
+
 import {
   getAuth,
   signInWithEmailAndPassword,
+  signInWithCredential,
+  GoogleAuthProvider,
   sendPasswordResetEmail,
 } from "firebase/auth";
-
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { isSupported } from "firebase/analytics";
 import {
   GoogleSignin,
   isSuccessResponse,
@@ -27,19 +32,22 @@ import {
 } from "@react-native-google-signin/google-signin";
 
 export default function StartUp({ navigation }) {
-  const [fontsLoaded] = useFonts({
-    PixelifySans: require("../assets/fonts/PixelifySans-Regular.ttf"),
-    PixelifySansBold: require("../assets/fonts/PixelifySans-Bold.ttf"),
-    Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
-    PoppinsBold: require("../assets/fonts/Poppins-Bold.ttf"),
-    Mochi: require("../assets/fonts/MochiyPopOne.ttf"),
-  });
   const auth = getAuth(app);
 
   const [showEmailForm, setShowEmailForm] = useState(false);
+  const [showName, setshowName] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const fontsLoaded = useAppFonts();
+
+  useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: "YOUR_FIREBASE_WEB_CLIENT_ID",
+    });
+  }, []);
+  if (!fontsLoaded) return null;
 
   const handleForgotPass = async () => {
     if (!email) {
@@ -48,7 +56,7 @@ export default function StartUp({ navigation }) {
     }
 
     try {
-      setLoading(true);
+      setIsSubmitting(true);
 
       await sendPasswordResetEmail(auth, email.trim());
 
@@ -67,12 +75,13 @@ export default function StartUp({ navigation }) {
         Alert.alert("Error", error.message);
       }
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleEmailSignIn = async () => {
     if (!showEmailForm) {
+      setshowName(false);
       setShowEmailForm(true);
       return;
     }
@@ -91,8 +100,39 @@ export default function StartUp({ navigation }) {
         password,
       );
 
+      const users = response.user;
+
       console.log("User signed in:", response.user.uid);
-      navigation.navigate("HomeScreen");
+
+      const db = getFirestore();
+      const userRef = doc(db, "users", users.uid);
+      const docSnap = await getDoc(userRef);
+
+      // 🔥 Create Firestore doc if first login
+      if (!docSnap.exists()) {
+        await setDoc(userRef, {
+          name: null,
+          age: null,
+          role: null,
+          email: users.email,
+          createdAt: new Date(),
+          provider: "email",
+        });
+      }
+
+      // 🔥 Re-fetch updated data
+      const updatedDoc = await getDoc(userRef);
+      const userData = updatedDoc.data();
+      console.log("User Data", userData);
+
+      // 🔥 Redirect based on profile completeness
+      if (!userData.name || !userData.age) {
+        navigation.replace("NameEntry");
+      } else if (!userData.role) {
+        navigation.replace("RoleSelect");
+      } else {
+        navigation.replace("HomeScreen");
+      }
     } catch (error) {
       console.log(error);
       switch (error.code) {
@@ -116,56 +156,62 @@ export default function StartUp({ navigation }) {
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
+
       await GoogleSignin.hasPlayServices();
-      const response = await GoogleSignin.signIn();
+      await GoogleSignin.signIn();
 
-      if (isSuccessResponse(response)) {
-        const { idToken, user } = response.data;
-        const { name, email, photo } = user;
+      // 🔥 Get ID token
+      const { idToken } = await GoogleSignin.getTokens();
 
-        //this is the part where you do the backend part
-        //pass the id token of the user to the backend to get their stuff.
+      // 🔥 Sign into Firebase
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+      const user = userCredential.user;
 
-        navigation.navigate("HomeScreen");
-      } else {
-        Alert.alert(
-          "Login Failed", // title
-          "Your Google sign-in was unsuccessful. Please try again.", // message
-          [{ text: "OK", onPress: () => console.log("OK Pressed") }], // buttons
-          { cancelable: true }, // allows closing by tapping outside
-        );
+      const db = getFirestore();
+      const userRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(userRef);
+
+      // 🔥 Create Firestore doc if first login
+      if (!docSnap.exists()) {
+        await setDoc(userRef, {
+          name: null,
+          age: null,
+          role: null,
+          email: user.email,
+          createdAt: new Date(),
+          provider: "google",
+        });
       }
 
-      setIsSubmitting(false);
+      // 🔥 Re-fetch updated data
+      const updatedDoc = await getDoc(userRef);
+      const userData = updatedDoc.data();
+
+      // 🔥 Redirect based on profile completeness
+      if (!userData.name || !userData.age || !userData.role) {
+        navigation.replace("NameEntry");
+      } else {
+        navigation.replace("HomeScreen");
+      }
     } catch (error) {
+      console.log("Google Sign-in Error:", error);
+
       if (isErrorWithCode(error)) {
         switch (error.code) {
           case statusCodes.IN_PROGRESS:
-            Alert.alert(
-              "Your Google sign-in is in progress",
-              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
-              { cancelable: true },
-            );
+            Alert.alert("Google sign-in already in progress.");
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
-            Alert.alert(
-              "Play services not available",
-              [{ text: "OK", onPress: () => console.log("OK Pressed") }],
-              { cancelable: true },
-            );
+            Alert.alert("Google Play Services not available.");
             break;
           default:
-            Alert.alert(
-              error.code,
-              "git gud"[
-                { text: "OK", onPress: () => console.log("OK Pressed") }
-              ],
-              { cancelable: true },
-            );
+            Alert.alert("Login Error", error.message);
         }
       } else {
-        Alert.alert("You fucked up!");
+        Alert.alert("Unexpected Error", error.message);
       }
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -184,25 +230,35 @@ export default function StartUp({ navigation }) {
         contentFit="fill"
         transition={0}
       />
-      <Text style={styles.welcome}>Welcome!</Text>
+      {showName ? <Text style={styles.welcome}>Welcome!</Text> : null}
 
       {showEmailForm ? (
         <View style={styles.formContainer}>
           <TextInput
             style={styles.input}
             placeholder="Email"
-            placeholderTextColor="#aaa"
+            placeholderTextColor="#000000"
             value={email}
             onChangeText={setEmail}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#aaa"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+          <View style={styles.inputBox}>
+            <TextInput
+              style={styles.inputPass}
+              placeholder="Password"
+              placeholderTextColor="#000000"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <Ionicons
+                name={showPassword ? "eye-off" : "eye"}
+                size={24}
+                color="#555"
+              />
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity onPress={handleForgotPass}>
             <Text style={styles.forgetPass}>Forgot Password?</Text>
           </TouchableOpacity>
@@ -255,81 +311,98 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: "PixelifySans",
-    fontSize: 96,
+    fontSize: scale(96),
     color: "#fff",
   },
   subTitle: {
     fontFamily: "PixelifySans",
-    fontSize: 24,
+    fontSize: scale(24),
     color: "#fff",
+    paddingBottom: verticalScale(30),
   },
   gif: {
-    width: 190,
-    height: 190,
-    margin: 30,
+    width: scale(190),
+    height: scale(190),
+    margin: scale(30),
+    marginTop: verticalScale(-5),
   },
   welcome: {
     fontFamily: "PixelifySans",
-    fontSize: 64,
+    fontSize: scale(64),
     color: "#fff",
   },
   formContainer: {
-    width: 250,
-    marginBottom: 10,
+    width: scale(300),
+    marginBottom: verticalScale(10),
+    marginTop: verticalScale(-20),
+  },
+  inputBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: scale(10),
+    marginBottom: verticalScale(5),
+    paddingHorizontal: scale(10),
   },
   input: {
     backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    marginBottom: 10,
+    borderRadius: scale(10),
+    paddingHorizontal: scale(15),
+    marginBottom: scale(15),
     fontFamily: "Poppins",
-    fontSize: 14,
+    fontSize: scale(16),
+  },
+  inputPass: {
+    flex: 1,
+    fontSize: scale(16),
+    color: "#000",
+    fontFamily: "Poppins",
   },
   forgetPass: {
     fontFamily: "Poppins",
-    fontSize: 14,
+    fontSize: scale(14),
     color: "#fff",
     textDecorationLine: "underline",
     textAlign: "right",
+    marginBottom: verticalScale(-30),
   },
   buttonEmail: {
     flexDirection: "row",
     backgroundColor: "#FF9149",
-    width: 250,
-    height: 50,
+    width: scale(250),
+    height: verticalScale(50),
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 20,
-    marginTop: 20,
+    marginTop: verticalScale(20),
     borderWidth: 1,
     borderColor: "#fff",
   },
   iconEmail: {
-    marginRight: 10,
-    fontSize: 32,
+    marginRight: scale(10),
+    fontSize: scale(32),
     color: "#FFF",
   },
   buttonGoogle: {
     flexDirection: "row",
     backgroundColor: "#FFF",
-    width: 250,
-    height: 50,
+    width: scale(250),
+    height: verticalScale(50),
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 20,
-    marginTop: 20,
+    borderRadius: scale(20),
+    marginTop: scale(20),
     borderWidth: 1,
     borderColor: "#FF9149",
   },
   iconGoogle: {
-    marginRight: 10,
-    width: 32,
-    height: 32,
+    marginRight: scale(10),
+    width: scale(32),
+    height: verticalScale(32),
   },
   buttonText: {
     fontFamily: "Poppins",
-    fontSize: 14,
+    fontSize: scale(14),
     textAlign: "center",
     color: "#fff",
   },
@@ -341,9 +414,9 @@ const styles = StyleSheet.create({
   },
   signUpText: {
     fontFamily: "Poppins",
-    fontSize: 16,
+    fontSize: scale(16),
     color: "#FFF",
-    marginTop: 20,
+    marginTop: verticalScale(20),
   },
   signUpTextUnderline: {
     textDecorationLine: "underline",

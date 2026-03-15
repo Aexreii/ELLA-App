@@ -1,33 +1,33 @@
 {
   "project_info": {
-    "project_number": "885030597679",
-    "project_id": "ella-e7cd5",
-    "storage_bucket": "ella-e7cd5.firebasestorage.app"
+    "project_number": "519631852985",
+    "project_id": "ella-firebase-b354f",
+    "storage_bucket": "ella-firebase-b354f.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:885030597679:android:cd6223f1904fbb724c82da",
+        "mobilesdk_app_id": "1:519631852985:android:c0d421db72c10b1d499268",
         "android_client_info": {
           "package_name": "com.ella.app"
         }
       },
       "oauth_client": [
         {
-          "client_id": "885030597679-elkhj46ae65me2vl7puvsqh0hq1gjg3i.apps.googleusercontent.com",
+          "client_id": "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBji96XTWXHS4U4SXk9u370xEqgZI6oLl4"
+          "current_key": "AIzaSyBQ2yEJD2NfEQmM-SelIfO2AzdSeGOOOCc"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "885030597679-elkhj46ae65me2vl7puvsqh0hq1gjg3i.apps.googleusercontent.com",
+              "client_id": "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
