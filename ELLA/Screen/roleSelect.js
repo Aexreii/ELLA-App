@@ -4,6 +4,8 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useFonts } from "expo-font";
+import { getAuth } from "firebase/auth";
+import { getFirestore, doc, updateDoc } from "firebase/firestore";
 
 export default function RoleSelect() {
   const navigation = useNavigation();
@@ -11,26 +13,37 @@ export default function RoleSelect() {
   const { userName } = route.params || {};
   const [role, setRole] = useState(null);
 
-  // Load fonts
-  const [fontsLoaded] = useFonts({
-    PixelifySans: require("../assets/fonts/PixelifySans-Regular.ttf"),
-    PixelifySansBold: require("../assets/fonts/PixelifySans-Bold.ttf"),
-    Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
-    PoppinsBold: require("../assets/fonts/Poppins-Bold.ttf"),
-    Mochi: require("../assets/fonts/MochiyPopOne.ttf"),
-  });
-
   if (!fontsLoaded) {
     return null; // Wait for fonts to load
   }
 
-  const handleRole = (selectedRole) => {
+  const handleRole = async (selectedRole) => {
     setRole(selectedRole);
     console.log("Role selected:", selectedRole, userName);
 
-    //backend part to save role. Go Vik!
+    try {
+      const auth = getAuth();
+      const user = auth.currentUser;
 
-    navigation.navigate("AvatarSelect", { userName, role: selectedRole });
+      if (!user) {
+        Alert.alert("Error", "User not logged in");
+        return;
+      }
+
+      const db = getFirestore();
+      const userRef = doc(db, "users", user.uid);
+
+      await updateDoc(userRef, {
+        role: selectedRole,
+      });
+
+      console.log("Role saved:", selectedRole);
+
+      navigation.navigate("HomeScreen");
+    } catch (error) {
+      console.log(error);
+      Alert.alert("Error", error.message);
+    }
   };
 
   return (
@@ -38,7 +51,13 @@ export default function RoleSelect() {
       {/* Close Button */}
       <TouchableOpacity
         style={styles.closeButton}
-        onPress={() => navigation.goBack()}
+        onPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.replace("StartUp"); // fallback
+          }
+        }}
       >
         <Ionicons name="arrow-back" size={32} color="#fff" />
       </TouchableOpacity>

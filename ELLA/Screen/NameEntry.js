@@ -12,6 +12,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { getAuth } from "firebase/auth";
+import { getFirestore, doc, updateDoc } from "firebase/firestore";
 import Slider from "@react-native-community/slider";
 
 export default function SignUp() {
@@ -20,14 +22,36 @@ export default function SignUp() {
   const [age, setAge] = useState(10);
   const { width } = Dimensions.get("window");
 
-  const handleNameEntry = () => {
+  const handleNameEntry = async () => {
     if (!name.trim()) {
       Alert.alert("Error!", "Please enter your name!");
-      return; // Stop the function from continuing
+      return;
     }
-    console.log("Name entered:", name);
-    //backend part of saving a user's name.
-    navigation.navigate("RoleSelect", { userName: name });
+
+    try {
+      const auth = getAuth();
+      const user = auth.currentUser;
+
+      if (!user) {
+        Alert.alert("Error", "User not logged in");
+        return;
+      }
+
+      const db = getFirestore();
+      const userRef = doc(db, "users", user.uid);
+
+      await updateDoc(userRef, {
+        name: name.trim(),
+        age: age,
+      });
+
+      console.log("Name saved:", name);
+
+      navigation.navigate("RoleSelect", { userName: name });
+    } catch (error) {
+      console.log(error);
+      Alert.alert("Error", error.message);
+    }
   };
 
   return (
@@ -35,12 +59,21 @@ export default function SignUp() {
       {/* Close button */}
       <TouchableOpacity
         style={styles.closeButton}
-        onPress={() => navigation.goBack()}
+        onPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "StartUp" }],
+            });
+          }
+        }}
       >
         <Ionicons name="arrow-back" size={32} color="#fff" />
       </TouchableOpacity>
 
-      <Text style={styles.title}>What's your {"\n"} Name?</Text>
+      <Text style={styles.title}>What's your Name?</Text>
 
       <TextInput
         style={styles.input}
@@ -50,7 +83,7 @@ export default function SignUp() {
         onChangeText={setName}
       />
 
-      <Text style={styles.subtitle}>How old are you?{"\n"}</Text>
+      <Text style={styles.subtitle}>How old are you?</Text>
 
       <Text style={styles.ageText}>{age} years old</Text>
 
@@ -93,29 +126,31 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: "absolute",
-    top: 50,
+    top: 20,
     left: 20,
   },
   title: {
     fontFamily: "Mochi",
-    fontSize: 36,
-    textAlign: "center",
-    marginVertical: 15,
+    fontSize: 24,
+    //textAlign: "center",
+    paddingTop: 100,
+    marginBottom: 30,
     color: "#fff",
   },
   subtitle: {
-    fontFamily: "Mochi",
+    fontFamily: "Poppins",
     fontSize: 24,
-    textAlign: "center",
+    textAlign: "left",
     color: "#fff",
     paddingTop: 60,
   },
   input: {
     backgroundColor: "#fff",
     borderRadius: 15,
-    width: 250,
+    width: 300,
     height: 50,
     fontFamily: "Poppins",
+    fontSize: 15,
     paddingHorizontal: 10,
     marginBottom: 20,
   },
@@ -137,7 +172,7 @@ const styles = StyleSheet.create({
   ageText: {
     fontFamily: "Mochi",
     fontSize: 24,
-    color: "#fff",
+    color: "#000000",
   },
   gif: {
     width: 150,

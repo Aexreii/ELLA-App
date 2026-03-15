@@ -3,15 +3,13 @@ import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBVGKJq2uOd2q-CR9ehxFQgUUrwyrkalks",
-  authDomain: "ella-e7cd5.firebaseapp.com",
-  projectId: "ella-e7cd5",
-  storageBucket: "ella-e7cd5.firebasestorage.app",
-  messagingSenderId: "885030597679",
-  appId: "1:885030597679:web:e140a65b3e0b50ee4c82da",
-  measurementId: "G-N7ZS6WVTWC",
+  apiKey: "AIzaSyB_Yhi-_EOJXm1SAEIGLCu_PD1GVz3p49E",
+  authDomain: "ella-firebase-b354f.firebaseapp.com",
+  projectId: "ella-firebase-b354f",
+  storageBucket: "ella-firebase-b354f.firebasestorage.app",
+  messagingSenderId: "519631852985",
+  appId: "1:519631852985:web:51d6f2de6aa5c182499268",
 };
-
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
