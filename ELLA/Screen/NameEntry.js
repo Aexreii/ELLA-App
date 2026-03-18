@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,20 +7,49 @@ import {
   StyleSheet,
   Dimensions,
 } from "react-native";
+import { useRoute } from "@react-navigation/native";
 
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { getAuth } from "firebase/auth";
-import { getFirestore, doc, updateDoc } from "firebase/firestore";
+import { getFirestore, doc, updateDoc, getDoc } from "firebase/firestore";
 import Slider from "@react-native-community/slider";
 
-export default function SignUp() {
+export default function NameEntry() {
   const navigation = useNavigation();
   const [name, setName] = useState("");
-  const [age, setAge] = useState(10);
+  const [age, setAge] = useState(30);
   const { width } = Dimensions.get("window");
+  const [low, setLow] = useState(15);
+  const [high, setHigh] = useState(70);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const auth = getAuth();
+      const user = auth.currentUser;
+
+      if (!user) return;
+
+      const db = getFirestore();
+      const userRef = doc(db, "users", user.uid);
+
+      const docSnap = await getDoc(userRef);
+      const userData = docSnap.data();
+
+      if (userData?.role === "Student") {
+        setLow(3);
+        setHigh(12);
+        setAge(5);
+      } else {
+        setLow(15);
+        setHigh(70);
+      }
+    };
+
+    fetchUserData();
+  }, []);
 
   const handleNameEntry = async () => {
     if (!name.trim()) {
@@ -47,7 +76,7 @@ export default function SignUp() {
 
       console.log("Name saved:", name);
 
-      navigation.navigate("RoleSelect", { userName: name });
+      navigation.navigate("HomeScreen");
     } catch (error) {
       console.log(error);
       Alert.alert("Error", error.message);
@@ -56,7 +85,6 @@ export default function SignUp() {
 
   return (
     <View style={styles.container}>
-      {/* Close button */}
       <TouchableOpacity
         style={styles.closeButton}
         onPress={() => {
@@ -85,12 +113,12 @@ export default function SignUp() {
 
       <Text style={styles.subtitle}>How old are you?</Text>
 
-      <Text style={styles.ageText}>{age} years old</Text>
+      <Text style={styles.ageText}>{age}</Text>
 
       <Slider
         style={{ width: width * 0.8, height: 40 }} // responsive width, thinner height
-        minimumValue={3}
-        maximumValue={15}
+        minimumValue={low}
+        maximumValue={high}
         step={1}
         value={age}
         onValueChange={(value) => setAge(value)}
@@ -131,8 +159,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: "Mochi",
-    fontSize: 24,
-    //textAlign: "center",
+    fontSize: 28,
+    textAlign: "center",
     paddingTop: 100,
     marginBottom: 30,
     color: "#fff",
@@ -151,7 +179,7 @@ const styles = StyleSheet.create({
     height: 50,
     fontFamily: "Poppins",
     fontSize: 15,
-    paddingHorizontal: 10,
+    paddingHorizontal: 20,
     marginBottom: 20,
   },
   button: {
@@ -171,8 +199,8 @@ const styles = StyleSheet.create({
   },
   ageText: {
     fontFamily: "Mochi",
-    fontSize: 24,
-    color: "#000000",
+    fontSize: 20,
+    color: "#ffffff",
   },
   gif: {
     width: 150,
