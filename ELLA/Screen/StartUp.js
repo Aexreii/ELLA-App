@@ -89,6 +89,7 @@ export default function StartUp({ navigation }) {
     if (!email.trim() || !password) {
       Alert.alert("Error", "Please enter email and password");
       return;
+      r;
     }
 
     try {
@@ -108,8 +109,8 @@ export default function StartUp({ navigation }) {
       const userRef = doc(db, "users", users.uid);
       const docSnap = await getDoc(userRef);
 
-      // 🔥 Create Firestore doc if first login
       if (!docSnap.exists()) {
+        console.log("New Account");
         await setDoc(userRef, {
           name: null,
           age: null,
@@ -120,15 +121,11 @@ export default function StartUp({ navigation }) {
         });
       }
 
-      // 🔥 Re-fetch updated data
       const updatedDoc = await getDoc(userRef);
       const userData = updatedDoc.data();
       console.log("User Data", userData);
 
-      // 🔥 Redirect based on profile completeness
-      if (!userData.name || !userData.age) {
-        navigation.replace("NameEntry");
-      } else if (!userData.role) {
+      if (!userData.role || !userData.name) {
         navigation.replace("RoleSelect");
       } else {
         navigation.replace("HomeScreen");
@@ -174,6 +171,7 @@ export default function StartUp({ navigation }) {
 
       // 🔥 Create Firestore doc if first login
       if (!docSnap.exists()) {
+        console.log("new user");
         await setDoc(userRef, {
           name: null,
           age: null,
@@ -190,7 +188,7 @@ export default function StartUp({ navigation }) {
 
       // 🔥 Redirect based on profile completeness
       if (!userData.name || !userData.age || !userData.role) {
-        navigation.replace("NameEntry");
+        navigation.replace("RoleSelect");
       } else {
         navigation.replace("HomeScreen");
       }

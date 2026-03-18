@@ -3,18 +3,20 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { useFonts } from "expo-font";
 import { getAuth } from "firebase/auth";
 import { getFirestore, doc, updateDoc } from "firebase/firestore";
+import useAppFonts from "../hook/useAppFonts";
+import { scale, verticalScale } from "../utils/scaling";
 
 export default function RoleSelect() {
   const navigation = useNavigation();
   const route = useRoute();
   const { userName } = route.params || {};
   const [role, setRole] = useState(null);
+  const fontsLoaded = useAppFonts();
 
   if (!fontsLoaded) {
-    return null; // Wait for fonts to load
+    return null;
   }
 
   const handleRole = async (selectedRole) => {
@@ -39,7 +41,7 @@ export default function RoleSelect() {
 
       console.log("Role saved:", selectedRole);
 
-      navigation.navigate("HomeScreen");
+      navigation.navigate("NameEntry", { userRole: selectedRole });
     } catch (error) {
       console.log(error);
       Alert.alert("Error", error.message);
@@ -110,42 +112,42 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: "absolute",
-    top: 50,
-    left: 20,
+    top: verticalScale(50),
+    left: scale(20),
   },
   title: {
     fontFamily: "Mochi",
-    fontSize: 36,
+    fontSize: scale(36),
     textAlign: "center",
-    marginBottom: 40,
+    marginBottom: verticalScale(40),
     color: "#fff",
   },
   gif: {
-    width: 150,
-    height: 150,
-    marginBottom: 30,
+    width: scale(150),
+    height: verticalScale(150),
+    marginBottom: scale(30),
   },
   rolesContainer: {
     alignItems: "center",
     justifyContent: "center",
   },
   roleCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 100,
+    width: scale(120),
+    height: verticalScale(120),
+    borderRadius: scale(100),
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
     overflow: "visible",
   },
   roleGif: {
-    width: 45,
+    width: scale(45),
     height: "60%",
   },
   roleLabel: {
     fontFamily: "PixelifySans",
-    fontSize: 24,
+    fontSize: scale(24),
     color: "#fff",
-    marginTop: 10,
+    marginTop: verticalScale(10),
   },
 });

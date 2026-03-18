@@ -42,23 +42,11 @@ export default function App() {
               contentStyle: { backgroundColor: "#fff" },
             }}
           >
-            {!user ? (
-              // Not logged in → show login/signup flow
-              <>
-                <Stack.Screen name="StartUp" component={StartUp} />
-                <Stack.Screen name="SignUp" component={SignUp} />
-                <Stack.Screen name="NameEntry" component={NameEntry} />
-              </>
-            ) : !profile?.name || !profile?.role ? (
-              // Logged in but profile incomplete → show RoleSelect / NameEntry
-              <>
-                <Stack.Screen name="RoleSelect" component={RoleSelect} />
-                <Stack.Screen name="NameEntry" component={NameEntry} />
-              </>
-            ) : (
-              // Logged in with complete profile → go straight to Home
-              <Stack.Screen name="HomeScreen" component={HomeScreen} />
-            )}
+            <Stack.Screen name="StartUp" component={StartUp} />
+            <Stack.Screen name="SignUp" component={SignUp} />
+            <Stack.Screen name="NameEntry" component={NameEntry} />
+            <Stack.Screen name="RoleSelect" component={RoleSelect} />
+            <Stack.Screen name="HomeScreen" component={HomeScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaView>

@@ -21,6 +21,7 @@ import { ImageBackground } from "react-native";
 // import Sidebar from "../components/Sidebar";
 import { getLastUnfinishedBook, getRecommendedBooks } from "../libUtil";
 import { get } from "react-native/Libraries/TurboModule/TurboModuleRegistry";
+import { scale, verticalScale } from "../utils/scaling";
 
 //This is for the backend Database.
 import { Students, books } from "../Data/data";
@@ -124,7 +125,6 @@ export default function HomeScreen() {
         <View style={{ height: 30 }} />
         <View styles={styles.content}>
           <Text style={styles.readText}>Let's Read!</Text>
-          <View style={styles.readTextSpacing} />
         </View>
         {/* <Sidebar
           isMenuOpen={isMenuOpen}
@@ -135,7 +135,7 @@ export default function HomeScreen() {
           setIsExitDialogOpen={setIsExitDialogOpen}
         /> */}
         {/* Catalog section */}
-        <View style={{ height: 60 }} />
+        <View style={{ height: 100 }} />
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           <View style={styles.lastRead}>
             <TouchableOpacity
@@ -362,9 +362,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     textAlign: "center",
   },
-  readTextSpacing: {
-    height: 20,
-  },
+
   badgeContainer: {
     flexDirection: "row",
     alignItems: "center",
