@@ -7,10 +7,19 @@ import { books } from "./Data/data";
 // GO GUYS KAYA TO!
 
 // Difficulty order for filtering
-
 const difficultyOrder = { Beginner: 1, Intermediate: 2, Advanced: 3 };
 
 export function getRecommendedBooks(user) {
+  // FIX: Guard against null/undefined user or missing progress
+  if (!user || !user.progress) {
+    return {
+      recommended: [],
+      teacherMaterials: [],
+      studentUploads: [],
+      appBooks: [],
+    };
+  }
+
   const completedBookIds = user.progress.map((p) => p.bookId);
 
   // Determine max difficulty based on points
@@ -34,9 +43,10 @@ export function getRecommendedBooks(user) {
   return { recommended, teacherMaterials, studentUploads, appBooks };
 }
 
-//return last unread book
+// Return last unread book
 export function getLastUnfinishedBook(user) {
-  if (!user.progress || user.progress.length === 0) return null;
+  // FIX: Guard against null/undefined user or missing/empty progress
+  if (!user || !user.progress || user.progress.length === 0) return null;
 
   // 1️⃣ Find all unfinished books
   const unfinished = user.progress.filter(
