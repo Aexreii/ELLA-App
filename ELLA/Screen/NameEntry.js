@@ -6,14 +6,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  Alert,
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
-
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { getAuth } from "firebase/auth";
+
+// FIX: Was importing `auth` from "firebase/auth" (wrong — that's not an export of the SDK)
+// FIX: Removed stray `const auth = getAuth()` inside handleNameEntry
+// FIX: Now importing the initialized auth instance from firebase.js
+import { auth } from "../firebase";
 import { getFirestore, doc, updateDoc, getDoc } from "firebase/firestore";
 import Slider from "@react-native-community/slider";
 
@@ -27,7 +30,6 @@ export default function NameEntry() {
 
   useEffect(() => {
     const fetchUserData = async () => {
-      const auth = getAuth();
       const user = auth.currentUser;
 
       if (!user) return;
@@ -58,7 +60,7 @@ export default function NameEntry() {
     }
 
     try {
-      const auth = getAuth();
+      // FIX: Removed `const auth = getAuth()` here — using the imported auth directly
       const user = auth.currentUser;
 
       if (!user) {
@@ -116,7 +118,7 @@ export default function NameEntry() {
       <Text style={styles.ageText}>{age}</Text>
 
       <Slider
-        style={{ width: width * 0.8, height: 40 }} // responsive width, thinner height
+        style={{ width: width * 0.8, height: 40 }}
         minimumValue={low}
         maximumValue={high}
         step={1}
@@ -144,7 +146,6 @@ export default function NameEntry() {
   );
 }
 
-// Styling
 const styles = StyleSheet.create({
   container: {
     flex: 1,

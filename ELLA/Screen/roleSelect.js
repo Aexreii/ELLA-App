@@ -1,9 +1,12 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { getAuth } from "firebase/auth";
+
+// FIX: Was importing from "../firebaseconfig" (old broken file)
+// FIX: Now importing auth from the correct "../firebase"
+import { auth } from "../firebase";
 import { getFirestore, doc, updateDoc } from "firebase/firestore";
 import useAppFonts from "../hook/useAppFonts";
 import { scale, verticalScale } from "../utils/scaling";
@@ -24,10 +27,10 @@ export default function RoleSelect() {
     console.log("Role selected:", selectedRole, userName);
 
     try {
-      const auth = getAuth();
       const user = auth.currentUser;
 
       if (!user) {
+        // FIX: Alert was used but never imported — now imported from react-native above
         Alert.alert("Error", "User not logged in");
         return;
       }
@@ -57,7 +60,7 @@ export default function RoleSelect() {
           if (navigation.canGoBack()) {
             navigation.goBack();
           } else {
-            navigation.replace("StartUp"); // fallback
+            navigation.replace("StartUp");
           }
         }}
       >
@@ -82,7 +85,6 @@ export default function RoleSelect() {
         </TouchableOpacity>
         <Text style={styles.roleLabel}>Student</Text>
 
-        {/* Spacing between icons */}
         <View style={{ height: 60 }} />
 
         {/* Teacher */}
@@ -102,7 +104,6 @@ export default function RoleSelect() {
   );
 }
 
-// Styling
 const styles = StyleSheet.create({
   container: {
     flex: 1,

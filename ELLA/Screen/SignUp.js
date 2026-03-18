@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,23 +8,22 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import * as Google from "expo-auth-session/providers/google";
-import * as WebBrowser from "expo-web-browser";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import app from "../firebaseconfig";
-import { scale, verticalScale } from "../utils/scaling";
 
-import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+// FIX: Single source of truth — import auth from firebase.js
+// FIX: Removed duplicate `import app from "../firebaseconfig"` and `const auth = getAuth(app)`
+// FIX: Removed unused imports (expo-auth-session, expo-web-browser)
+import { auth } from "../firebase";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { scale, verticalScale } from "../utils/scaling";
 import {
   GoogleSignin,
   isSuccessResponse,
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-
-const auth = getAuth(app);
 
 export default function SignUp() {
   const navigation = useNavigation();
@@ -54,9 +53,24 @@ export default function SignUp() {
       console.log("User created:", response.user.uid);
       Alert.alert("Success", "Account created successfully!");
 
-      // do the backend here, same with passing on the account id
+      // Write the initial Firestore user document on sign up
+      const db = getFirestore();
+      await setDoc(doc(db, "users", user.uid), {
+        name: null,
+        age: null,
+        role: null,
+        points: 0,
+        character: "pink",
+        email: user.email,
+        progress: [],
+        ownedStickers: [],
+        createdAt: new Date(),
+        provider: "email",
+      });
 
-      navigation.navigate("NameEntry");
+      console.log("Firestore document created for:", user.uid);
+      Alert.alert("Success", "Account created successfully!");
+      navigation.navigate("RoleSelect");
     } catch (error) {
       console.log(error);
       if (error.code === "auth/email-already-in-use") {
@@ -82,20 +96,15 @@ export default function SignUp() {
       if (isSuccessResponse(response)) {
         const { idToken, user } = response.data;
         const { name, email, photo } = user;
-
-        //this is the part where you do the backend part
-        //pass the id token of the user to the backend to get their stuff.
-
         navigation.navigate("HomeScreen");
       } else {
         Alert.alert(
-          "Login Failed", // title
-          "Your Google sign-in was unsuccessful. Please try again.", // message
-          [{ text: "OK", onPress: () => console.log("OK Pressed") }], // buttons
-          { cancelable: true }, // allows closing by tapping outside
+          "Login Failed",
+          "Your Google sign-in was unsuccessful. Please try again.",
+          [{ text: "OK", onPress: () => console.log("OK Pressed") }],
+          { cancelable: true },
         );
       }
-
       setIsSubmitting(false);
     } catch (error) {
       if (isErrorWithCode(error)) {
@@ -130,7 +139,6 @@ export default function SignUp() {
 
   return (
     <View style={styles.container}>
-      {/* Back Button */}
       <TouchableOpacity
         style={styles.closeButton}
         onPress={() => navigation.goBack()}

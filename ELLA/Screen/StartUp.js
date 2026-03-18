@@ -5,25 +5,25 @@ import {
   View,
   TouchableOpacity,
   TextInput,
+  Alert,
 } from "react-native";
 import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
-import { Alert } from "react-native";
-import app from "../firebaseconfig";
 import useAppFonts from "../hook/useAppFonts";
 import { scale, verticalScale } from "../utils/scaling";
 
+// FIX: Removed `import app from "../firebaseconfig"` and local `const auth = getAuth(app)`
+// FIX: Now using the shared auth instance from firebase.js
+import { auth } from "../firebase";
 import {
-  getAuth,
   signInWithEmailAndPassword,
   signInWithCredential,
   GoogleAuthProvider,
   sendPasswordResetEmail,
 } from "firebase/auth";
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
-import { isSupported } from "firebase/analytics";
 import {
   GoogleSignin,
   isSuccessResponse,
@@ -32,8 +32,6 @@ import {
 } from "@react-native-google-signin/google-signin";
 
 export default function StartUp({ navigation }) {
-  const auth = getAuth(app);
-
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [showName, setshowName] = useState(true);
   const [email, setEmail] = useState("");
@@ -47,6 +45,8 @@ export default function StartUp({ navigation }) {
       webClientId: "YOUR_FIREBASE_WEB_CLIENT_ID",
     });
   }, []);
+
+  // FIX: Removed duplicate `if (!fontsLoaded) return null` that appeared twice
   if (!fontsLoaded) return null;
 
   const handleForgotPass = async () => {
@@ -57,16 +57,13 @@ export default function StartUp({ navigation }) {
 
     try {
       setIsSubmitting(true);
-
       await sendPasswordResetEmail(auth, email.trim());
-
       Alert.alert(
         "Password Reset Email Sent",
         "Please check your inbox and follow the instructions to reset your password.",
       );
     } catch (error) {
       console.log(error);
-
       if (error.code === "auth/user-not-found") {
         Alert.alert("Error", "No account found with this email.");
       } else if (error.code === "auth/invalid-email") {
@@ -88,8 +85,8 @@ export default function StartUp({ navigation }) {
 
     if (!email.trim() || !password) {
       Alert.alert("Error", "Please enter email and password");
+      // FIX: Removed stray `r;` that was here — caused a ReferenceError at runtime
       return;
-      r;
     }
 
     try {
@@ -102,7 +99,6 @@ export default function StartUp({ navigation }) {
       );
 
       const users = response.user;
-
       console.log("User signed in:", response.user.uid);
 
       const db = getFirestore();
@@ -157,10 +153,8 @@ export default function StartUp({ navigation }) {
       await GoogleSignin.hasPlayServices();
       await GoogleSignin.signIn();
 
-      // 🔥 Get ID token
       const { idToken } = await GoogleSignin.getTokens();
 
-      // 🔥 Sign into Firebase
       const credential = GoogleAuthProvider.credential(idToken);
       const userCredential = await signInWithCredential(auth, credential);
       const user = userCredential.user;
@@ -169,24 +163,23 @@ export default function StartUp({ navigation }) {
       const userRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(userRef);
 
-      // 🔥 Create Firestore doc if first login
       if (!docSnap.exists()) {
         console.log("new user");
         await setDoc(userRef, {
           name: null,
           age: null,
           role: null,
+          points: 0,
+          character: "dino",
           email: user.email,
           createdAt: new Date(),
           provider: "google",
         });
       }
 
-      // 🔥 Re-fetch updated data
       const updatedDoc = await getDoc(userRef);
       const userData = updatedDoc.data();
 
-      // 🔥 Redirect based on profile completeness
       if (!userData.name || !userData.age || !userData.role) {
         navigation.replace("RoleSelect");
       } else {
@@ -213,10 +206,6 @@ export default function StartUp({ navigation }) {
       setIsSubmitting(false);
     }
   };
-
-  if (!fontsLoaded) {
-    return null;
-  }
 
   return (
     <View style={styles.container}>

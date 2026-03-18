@@ -14,6 +14,9 @@ import SignUp from "./Screen/SignUp";
 import NameEntry from "./Screen/NameEntry";
 import RoleSelect from "./Screen/roleSelect";
 import HomeScreen from "./Screen/HomeScreen";
+import OpenBook from "./Screen/OpenBook";
+import ReadBook from "./Screen/ReadBook";
+import Prizes from "./Screen/Prizes";
 
 const Stack = createNativeStackNavigator();
 
@@ -47,6 +50,9 @@ export default function App() {
             <Stack.Screen name="NameEntry" component={NameEntry} />
             <Stack.Screen name="RoleSelect" component={RoleSelect} />
             <Stack.Screen name="HomeScreen" component={HomeScreen} />
+            <Stack.Screen name="OpenBook" component={OpenBook} />
+            <Stack.Screen name="ReadBook" component={ReadBook} />
+            <Stack.Screen name="Prizes" component={Prizes} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaView>

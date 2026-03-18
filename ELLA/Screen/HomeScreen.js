@@ -18,23 +18,38 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { ImageBackground } from "react-native";
-// import Sidebar from "../components/Sidebar";
+import Sidebar from "../components/Sidebar";
 import { getLastUnfinishedBook, getRecommendedBooks } from "../libUtil";
-import { get } from "react-native/Libraries/TurboModule/TurboModuleRegistry";
 import { scale, verticalScale } from "../utils/scaling";
-
-//This is for the backend Database.
-import { Students, books } from "../Data/data";
+import { auth } from "../firebase";
+import {
+  getFirestore,
+  doc,
+  updateDoc,
+  getDoc,
+  collection,
+  getDocs,
+} from "firebase/firestore";
 
 export default function HomeScreen() {
-  const currUser = Students[0]; //change this if we have a backend.
+  const [currUser, setCurrUser] = useState(null);
+  const [books, setBooks] = useState([]);
 
-  const { recommended, teacherMaterials, studentUploads, appBooks } =
-    getRecommendedBooks(currUser);
+  // FIX 3: Declare currRoute as state so footer icons can use it
+  const [currRoute, setCurrRoute] = useState(1);
 
-  const currBook = getLastUnfinishedBook(currUser);
+  const { recommended, teacherMaterials, studentUploads, appBooks } = currUser
+    ? getRecommendedBooks(currUser)
+    : {
+        recommended: [],
+        teacherMaterials: [],
+        studentUploads: [],
+        appBooks: [],
+      };
 
-  const currRoute = 1;
+  const currBook = currUser
+    ? getLastUnfinishedBook(currUser) || books[0] || null
+    : null;
 
   const characterImages = {
     pink: require("../assets/animations/jump_pink.gif"),
@@ -60,7 +75,6 @@ export default function HomeScreen() {
   };
 
   const navigation = useNavigation();
-  const [name, setName] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
   const slideAnim = useState(new Animated.Value(-290))[0];
@@ -79,6 +93,60 @@ export default function HomeScreen() {
     return () => backHandler.remove();
   }, []);
 
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const user = auth.currentUser;
+
+        if (!user) {
+          console.log("No authenticated user");
+          return;
+        }
+
+        const db = getFirestore();
+        const userRef = doc(db, "users", user.uid);
+
+        const docSnap = await getDoc(userRef);
+
+        if (docSnap.exists()) {
+          const userData = docSnap.data();
+
+          setCurrUser({
+            id: user.uid,
+            ...userData,
+          });
+        } else {
+          console.log("No user document found!");
+        }
+      } catch (error) {
+        console.log("Error fetching user:", error);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  useEffect(() => {
+    const fetchBooks = async () => {
+      try {
+        const db = getFirestore();
+        const booksCol = collection(db, "books");
+        const booksSnapshot = await getDocs(booksCol);
+        const booksData = booksSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        setBooks(booksData);
+        console.log("Books fetched:", booksData);
+      } catch (error) {
+        console.log("Error fetching books:", error);
+      }
+    };
+
+    fetchBooks();
+  }, []);
+
   const handleExitApp = () => {
     setIsExitDialogOpen(false);
     BackHandler.exitApp();
@@ -91,6 +159,21 @@ export default function HomeScreen() {
   const handleOpenBook = (book, currUser) => {
     navigation.navigate("OpenBook", { book, currUser });
   };
+
+  // FIX 1: Return a loading state while currUser hasn't loaded yet
+  if (!currUser) {
+    return (
+      <ImageBackground
+        source={require("../assets/backgrounds/page.png")}
+        style={styles.background}
+        resizeMode="cover"
+      >
+        <View style={[styles.container, { justifyContent: "center" }]}>
+          <Text style={styles.subTitle}>Loading...</Text>
+        </View>
+      </ImageBackground>
+    );
+  }
 
   return (
     <ImageBackground
@@ -122,33 +205,41 @@ export default function HomeScreen() {
             <Text style={styles.amountText}>{currUser.points}</Text>
           </View>
         </View>
-        <View style={{ height: 30 }} />
-        <View styles={styles.content}>
+        <View style={{ height: 10 }} />
+
+        <View>
           <Text style={styles.readText}>Let's Read!</Text>
         </View>
-        {/* <Sidebar
-          isMenuOpen={isMenuOpen}
-          slideAnim={slideAnim}
-          handleMenuPress={handleMenuPress}
-          currUser={currUser}
-          characterImages={characterImages}
-          setIsExitDialogOpen={setIsExitDialogOpen}
-        /> */}
+
+        {
+          <Sidebar
+            isMenuOpen={isMenuOpen}
+            slideAnim={slideAnim}
+            handleMenuPress={handleMenuPress}
+            currUser={currUser}
+            characterImages={characterImages}
+            setIsExitDialogOpen={setIsExitDialogOpen}
+          />
+        }
+
         {/* Catalog section */}
-        <View style={{ height: 100 }} />
+        <View style={{ height: 40 }} />
         <ScrollView contentContainerStyle={styles.scrollContainer}>
-          <View style={styles.lastRead}>
-            <TouchableOpacity
-              style={styles.firstBook}
-              onPress={() => handleOpenBook(currBook, currUser)}
-            >
-              <RNImage
-                source={{ uri: currBook.cover }}
-                style={styles.bookImages}
-              />
-              <Text style={styles.bookTitle}>{currBook.title}</Text>
-            </TouchableOpacity>
-          </View>
+          {/* FIX 6: Guard against null currBook before rendering */}
+          {currBook && (
+            <View style={styles.lastRead}>
+              <TouchableOpacity
+                style={styles.firstBook}
+                onPress={() => handleOpenBook(currBook, currUser)}
+              >
+                <RNImage
+                  source={{ uri: currBook.cover }}
+                  style={styles.bookImages}
+                />
+                <Text style={styles.bookTitle}>{currBook.title}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.catalog}>
             {/* Recommended */}
@@ -229,7 +320,7 @@ export default function HomeScreen() {
         <View style={styles.footer}>
           <TouchableOpacity
             style={[styles.footerButton, styles.activeFooterButton]}
-            onPress={() => {}}
+            onPress={() => setCurrRoute(1)}
           >
             <Ionicons
               name="library-outline"
@@ -245,18 +336,23 @@ export default function HomeScreen() {
 
           <TouchableOpacity
             style={styles.footerButton}
-            onPress={() => navigation.navigate("Prizes", currUser)}
+            onPress={() => {
+              setCurrRoute(0);
+              navigation.navigate("Prizes", { currUser });
+            }}
           >
             <Ionicons
               name="diamond-outline"
               size={24}
               color={currRoute === 0 ? "#FF9149" : "#fff"}
             />
-            <Text style={styles.footerButtonText} color="#FF9149">
+            {/* FIX 4: color prop moved into style instead of as a direct prop */}
+            <Text style={[styles.footerButtonText, { color: "#FF9149" }]}>
               Prizes
             </Text>
           </TouchableOpacity>
         </View>
+
         {/* Exit Confirmation Dialog */}
         <Modal
           visible={isExitDialogOpen}
@@ -282,7 +378,10 @@ export default function HomeScreen() {
                   onPress={handleExitDialogClose}
                 >
                   <Ionicons name="close" size={20} color="#fff" />
-                  <Text style={styles.exitDialogButtonText} color="#fff">
+                  {/* FIX 4: color prop moved into style instead of as a direct prop */}
+                  <Text
+                    style={[styles.exitDialogButtonText, { color: "#fff" }]}
+                  >
                     No
                   </Text>
                 </TouchableOpacity>
@@ -309,7 +408,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(96, 181, 255, 0.85)", // optional blue overlay for readability
+    backgroundColor: "rgba(96, 181, 255, 0.85)",
     width: "100%",
     alignItems: "center",
   },
@@ -319,11 +418,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     width: "95%",
     marginBottom: 30,
+    marginTop: 30,
   },
   avatarContainer: {
     alignItems: "center",
     justifyContent: "center",
     marginRight: 30,
+    marginLeft: 10,
   },
   characterImage: {
     width: 50,
@@ -362,14 +463,13 @@ const styles = StyleSheet.create({
     color: "#fff",
     textAlign: "center",
   },
-
   badgeContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.2)", // translucent dark blue
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
     borderColor: "white",
     borderWidth: 1,
-    borderRadius: 50, // makes it pill-shaped
+    borderRadius: 50,
     paddingVertical: 1,
     paddingHorizontal: 10,
     marginRight: 10,
@@ -467,9 +567,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 20,
   },
-  activeFooterButton: {
-    // Active state styling
-  },
+  activeFooterButton: {},
   footerButtonText: {
     fontFamily: "Poppins",
     fontSize: 12,
