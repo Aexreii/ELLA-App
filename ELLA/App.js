@@ -2,9 +2,10 @@ import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { View, StatusBar } from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useEffect } from "react";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { MusicProvider } from "./hook/MusicContext";
 
 import useAuth from "./hook/useAuth";
 import useAppFonts from "./hook/useAppFonts";
@@ -16,7 +17,9 @@ import RoleSelect from "./Screen/roleSelect";
 import HomeScreen from "./Screen/HomeScreen";
 import OpenBook from "./Screen/OpenBook";
 import ReadBook from "./Screen/ReadBook";
+import UserProfile from "./Screen/UserProfile";
 import Prizes from "./Screen/Prizes";
+import Settings from "./Screen/Settings";
 
 const Stack = createNativeStackNavigator();
 
@@ -31,8 +34,8 @@ export default function App() {
   });
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={{ flex: 1, backgroundColor: "#60B5FF" }}>
+    <MusicProvider>
+      <SafeAreaProvider>
         <StatusBar
           translucent
           backgroundColor="transparent"
@@ -50,12 +53,14 @@ export default function App() {
             <Stack.Screen name="NameEntry" component={NameEntry} />
             <Stack.Screen name="RoleSelect" component={RoleSelect} />
             <Stack.Screen name="HomeScreen" component={HomeScreen} />
+            <Stack.Screen name="UserProfile" component={UserProfile} />
             <Stack.Screen name="OpenBook" component={OpenBook} />
             <Stack.Screen name="ReadBook" component={ReadBook} />
+            <Stack.Screen name="Settings" component={Settings} />
             <Stack.Screen name="Prizes" component={Prizes} />
           </Stack.Navigator>
         </NavigationContainer>
-      </SafeAreaView>
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </MusicProvider>
   );
 }

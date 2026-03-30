@@ -5,51 +5,44 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
   Alert,
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
-
-// FIX: Was importing `auth` from "firebase/auth" (wrong — that's not an export of the SDK)
-// FIX: Removed stray `const auth = getAuth()` inside handleNameEntry
-// FIX: Now importing the initialized auth instance from firebase.js
 import { auth } from "../firebase";
 import { getFirestore, doc, updateDoc, getDoc } from "firebase/firestore";
-import Slider from "@react-native-community/slider";
+import { useScale } from "../utils/scaling";
+import CustomSlider from "../components/CustomSlider";
 
 export default function NameEntry() {
   const navigation = useNavigation();
+  const { scale, verticalScale } = useScale();
+
   const [name, setName] = useState("");
-  const [age, setAge] = useState(30);
-  const { width } = Dimensions.get("window");
-  const [low, setLow] = useState(15);
-  const [high, setHigh] = useState(70);
+  const [age, setAge] = useState(null);
+  const [low, setLow] = useState(null);
+  const [high, setHigh] = useState(null);
 
   useEffect(() => {
     const fetchUserData = async () => {
       const user = auth.currentUser;
-
       if (!user) return;
-
       const db = getFirestore();
       const userRef = doc(db, "users", user.uid);
-
       const docSnap = await getDoc(userRef);
       const userData = docSnap.data();
-
       if (userData?.role === "Student") {
         setLow(3);
-        setHigh(12);
-        setAge(5);
+        setHigh(13);
+        setAge(8);
       } else {
         setLow(15);
         setHigh(70);
+        setAge(30);
       }
     };
-
     fetchUserData();
   }, []);
 
@@ -58,26 +51,16 @@ export default function NameEntry() {
       Alert.alert("Error!", "Please enter your name!");
       return;
     }
-
     try {
-      // FIX: Removed `const auth = getAuth()` here — using the imported auth directly
       const user = auth.currentUser;
-
       if (!user) {
         Alert.alert("Error", "User not logged in");
         return;
       }
-
       const db = getFirestore();
       const userRef = doc(db, "users", user.uid);
-
-      await updateDoc(userRef, {
-        name: name.trim(),
-        age: age,
-      });
-
+      await updateDoc(userRef, { name: name.trim(), age: age });
       console.log("Name saved:", name);
-
       navigation.navigate("HomeScreen");
     } catch (error) {
       console.log(error);
@@ -85,60 +68,55 @@ export default function NameEntry() {
     }
   };
 
+  const s = getStyles(scale, verticalScale);
+
   return (
-    <View style={styles.container}>
+    <View style={s.container}>
       <TouchableOpacity
-        style={styles.closeButton}
+        style={s.closeButton}
         onPress={() => {
-          if (navigation.canGoBack()) {
-            navigation.goBack();
-          } else {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: "StartUp" }],
-            });
-          }
+          if (navigation.canGoBack()) navigation.goBack();
+          else navigation.reset({ index: 0, routes: [{ name: "StartUp" }] });
         }}
       >
         <Ionicons name="arrow-back" size={32} color="#fff" />
       </TouchableOpacity>
 
-      <Text style={styles.title}>What's your Name?</Text>
+      <Text style={s.title}>What's your Name?</Text>
 
       <TextInput
-        style={styles.input}
+        style={s.input}
         placeholder="Name"
         placeholderTextColor="black"
         value={name}
         onChangeText={setName}
       />
 
-      <Text style={styles.subtitle}>How old are you?</Text>
+      <Text style={s.subtitle}>How old are you?</Text>
+      <Text style={s.ageText}>{age ?? "—"}</Text>
 
-      <Text style={styles.ageText}>{age}</Text>
+      {/* Only render slider once min/max are loaded from Firestore */}
+      {low !== null && high !== null && age !== null && (
+        <View style={s.sliderContainer}>
+          <CustomSlider
+            value={age}
+            onValueChange={(val) => setAge(val)}
+            min={low}
+            max={high}
+            step={1}
+            trackColor="#FF9149"
+            trackBgColor="rgba(255,255,255,0.35)"
+          />
+        </View>
+      )}
 
-      <Slider
-        style={{ width: width * 0.8, height: 40 }}
-        minimumValue={low}
-        maximumValue={high}
-        step={1}
-        value={age}
-        onValueChange={(value) => setAge(value)}
-        minimumTrackTintColor="#fff"
-        thumbTintColor="#FF9149"
-        trackStyle={{
-          height: 100,
-          borderRadius: 100,
-          backgroundColor: "#000000",
-        }}
-      />
-
-      <TouchableOpacity style={styles.button} onPress={handleNameEntry}>
-        <Text style={styles.buttonText}>Enter</Text>
+      <TouchableOpacity style={s.button} onPress={handleNameEntry}>
+        <Text style={s.buttonText}>Enter</Text>
       </TouchableOpacity>
+
       <Image
         source={require("../assets/animations/jump_dino.gif")}
-        style={styles.gif}
+        style={s.gif}
         contentFit="fill"
         transition={0}
       />
@@ -146,66 +124,73 @@ export default function NameEntry() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#60B5FF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  closeButton: {
-    position: "absolute",
-    top: 20,
-    left: 20,
-  },
-  title: {
-    fontFamily: "Mochi",
-    fontSize: 28,
-    textAlign: "center",
-    paddingTop: 100,
-    marginBottom: 30,
-    color: "#fff",
-  },
-  subtitle: {
-    fontFamily: "Poppins",
-    fontSize: 24,
-    textAlign: "left",
-    color: "#fff",
-    paddingTop: 60,
-  },
-  input: {
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    width: 300,
-    height: 50,
-    fontFamily: "Poppins",
-    fontSize: 15,
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  button: {
-    backgroundColor: "#FF9149",
-    paddingVertical: 12,
-    paddingHorizontal: 40,
-    borderRadius: 15,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  buttonText: {
-    fontFamily: "Poppins",
-    fontSize: 18,
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  ageText: {
-    fontFamily: "Mochi",
-    fontSize: 20,
-    color: "#ffffff",
-  },
-  gif: {
-    width: 150,
-    height: 150,
-    marginTop: 60,
-  },
-});
+const getStyles = (scale, verticalScale) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: "#60B5FF",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    closeButton: {
+      position: "absolute",
+      top: verticalScale(50),
+      left: scale(20),
+    },
+    title: {
+      fontFamily: "Mochi",
+      fontSize: scale(28),
+      textAlign: "center",
+      paddingTop: verticalScale(40),
+      marginBottom: verticalScale(30),
+      color: "#fff",
+    },
+    subtitle: {
+      fontFamily: "Poppins",
+      fontSize: scale(24),
+      textAlign: "left",
+      color: "#fff",
+      paddingTop: verticalScale(60),
+    },
+    input: {
+      backgroundColor: "#fff",
+      borderRadius: scale(15),
+      width: scale(300),
+      height: verticalScale(50),
+      fontFamily: "Poppins",
+      fontSize: scale(15),
+      paddingHorizontal: scale(20),
+      marginBottom: verticalScale(20),
+    },
+    sliderContainer: {
+      width: scale(300),
+      marginTop: verticalScale(10),
+    },
+    button: {
+      backgroundColor: "#FF9149",
+      paddingVertical: verticalScale(12),
+      paddingHorizontal: scale(40),
+      borderRadius: scale(15),
+      alignItems: "center",
+      borderWidth: 2,
+      borderColor: "#fff",
+      marginTop: verticalScale(20),
+    },
+    buttonText: {
+      fontFamily: "Poppins",
+      fontSize: scale(18),
+      color: "#fff",
+      fontWeight: "bold",
+    },
+    ageText: {
+      fontFamily: "Mochi",
+      fontSize: scale(20),
+      marginBottom: verticalScale(20),
+      color: "#ffffff",
+    },
+    gif: {
+      width: scale(150),
+      height: scale(150),
+      marginTop: verticalScale(40),
+    },
+  });
