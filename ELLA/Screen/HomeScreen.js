@@ -2,44 +2,43 @@ import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Image as RNImage,
   Modal,
   Animated,
-  Dimensions,
   BackHandler,
   Alert,
   ScrollView,
 } from "react-native";
-
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { ImageBackground } from "react-native";
 import Sidebar from "../components/Sidebar";
+import AppHeader from "../components/AppHeader";
 import { getLastUnfinishedBook, getRecommendedBooks } from "../libUtil";
-import { scale, verticalScale } from "../utils/scaling";
+import { useScale } from "../utils/scaling";
 import { auth } from "../firebase";
 import {
   getFirestore,
   doc,
-  updateDoc,
   getDoc,
   collection,
   getDocs,
 } from "firebase/firestore";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
+  const { scale, verticalScale } = useScale();
+  const insets = useSafeAreaInsets();
+
   const [currUser, setCurrUser] = useState(null);
   const [books, setBooks] = useState([]);
-
-  // FIX 3: Declare currRoute as state so footer icons can use it
   const [currRoute, setCurrRoute] = useState(1);
 
   const { recommended, teacherMaterials, studentUploads, appBooks } = currUser
-    ? getRecommendedBooks(currUser)
+    ? getRecommendedBooks(currUser, books)
     : {
         recommended: [],
         teacherMaterials: [],
@@ -48,7 +47,7 @@ export default function HomeScreen() {
       };
 
   const currBook = currUser
-    ? getLastUnfinishedBook(currUser) || books[0] || null
+    ? getLastUnfinishedBook(currUser, books) || books[0] || null
     : null;
 
   const characterImages = {
@@ -56,6 +55,11 @@ export default function HomeScreen() {
     dino: require("../assets/animations/jump_dino.gif"),
     owl: require("../assets/animations/jump_owl.gif"),
   };
+
+  const navigation = useNavigation();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
+  const slideAnim = useState(new Animated.Value(-290))[0];
 
   const handleMenuPress = () => {
     if (isMenuOpen) {
@@ -74,18 +78,11 @@ export default function HomeScreen() {
     }
   };
 
-  const navigation = useNavigation();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
-  const slideAnim = useState(new Animated.Value(-290))[0];
-
-  // Handle back button press
   useEffect(() => {
     const backAction = () => {
       setIsExitDialogOpen(true);
-      return true; // Prevent default back action
+      return true;
     };
-
     const backHandler = BackHandler.addEventListener(
       "hardwareBackPress",
       backAction,
@@ -93,36 +90,29 @@ export default function HomeScreen() {
     return () => backHandler.remove();
   }, []);
 
+  // Reset footer to Library tab whenever HomeScreen comes back into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      setCurrRoute(1);
+    }, []),
+  );
+
   useEffect(() => {
     const fetchUserData = async () => {
       try {
         const user = auth.currentUser;
-
         if (!user) {
           console.log("No authenticated user");
           return;
         }
-
         const db = getFirestore();
-        const userRef = doc(db, "users", user.uid);
-
-        const docSnap = await getDoc(userRef);
-
-        if (docSnap.exists()) {
-          const userData = docSnap.data();
-
-          setCurrUser({
-            id: user.uid,
-            ...userData,
-          });
-        } else {
-          console.log("No user document found!");
-        }
+        const docSnap = await getDoc(doc(db, "users", user.uid));
+        if (docSnap.exists()) setCurrUser({ id: user.uid, ...docSnap.data() });
+        else console.log("No user document found!");
       } catch (error) {
         console.log("Error fetching user:", error);
       }
     };
-
     fetchUserData();
   }, []);
 
@@ -130,46 +120,36 @@ export default function HomeScreen() {
     const fetchBooks = async () => {
       try {
         const db = getFirestore();
-        const booksCol = collection(db, "books");
-        const booksSnapshot = await getDocs(booksCol);
-        const booksData = booksSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-
-        setBooks(booksData);
-        console.log("Books fetched:", booksData);
+        const booksSnapshot = await getDocs(collection(db, "books"));
+        setBooks(
+          booksSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+        );
       } catch (error) {
         console.log("Error fetching books:", error);
       }
     };
-
     fetchBooks();
   }, []);
 
-  const handleExitApp = () => {
-    setIsExitDialogOpen(false);
-    BackHandler.exitApp();
-  };
-
-  const handleExitDialogClose = () => {
-    setIsExitDialogOpen(false);
-  };
-
-  const handleOpenBook = (book, currUser) => {
+  const handleOpenBook = (book, currUser) =>
     navigation.navigate("OpenBook", { book, currUser });
-  };
 
-  // FIX 1: Return a loading state while currUser hasn't loaded yet
+  const s = getStyles(scale, verticalScale);
+
   if (!currUser) {
     return (
       <ImageBackground
         source={require("../assets/backgrounds/page.png")}
-        style={styles.background}
+        style={s.background}
         resizeMode="cover"
       >
-        <View style={[styles.container, { justifyContent: "center" }]}>
-          <Text style={styles.subTitle}>Loading...</Text>
+        <View
+          style={[
+            s.container,
+            { justifyContent: "center", paddingTop: insets.top },
+          ]}
+        >
+          <Text style={s.loadingText}>Loading...</Text>
         </View>
       </ImageBackground>
     );
@@ -178,40 +158,24 @@ export default function HomeScreen() {
   return (
     <ImageBackground
       source={require("../assets/backgrounds/page.png")}
-      style={styles.background}
+      style={s.background}
       resizeMode="cover"
     >
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={handleMenuPress}
-            style={styles.avatarContainer}
-          >
-            <Image
-              source={characterImages[currUser.character]}
-              style={styles.characterImage}
-            />
-          </TouchableOpacity>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>ELLA</Text>
-            <Text style={styles.subTitle}>Your English Buddy</Text>
-          </View>
-          <View style={styles.badgeContainer}>
-            <Image
-              source={require("../assets/icons/diamond.png")}
-              style={styles.diamondIcon}
-              resizeMode="contain"
-            />
-            <Text style={styles.amountText}>{currUser.points}</Text>
-          </View>
-        </View>
-        <View style={{ height: 10 }} />
+      {/* FIX: Root container has NO paddingTop — footer stays anchored correctly */}
+      <View style={s.container}>
+        {/* FIX: insets.top applied only to the content area above the footer */}
+        <View style={[s.content, { paddingTop: insets.top }]}>
+          <AppHeader
+            currUser={currUser}
+            characterImages={characterImages}
+            onAvatarPress={handleMenuPress}
+          />
 
-        <View>
-          <Text style={styles.readText}>Let's Read!</Text>
-        </View>
+          <View style={{ height: verticalScale(25) }} />
+          <View style={s.readTextContainer}>
+            <Text style={s.readText}>Let's Read!</Text>
+          </View>
 
-        {
           <Sidebar
             isMenuOpen={isMenuOpen}
             slideAnim={slideAnim}
@@ -220,122 +184,76 @@ export default function HomeScreen() {
             characterImages={characterImages}
             setIsExitDialogOpen={setIsExitDialogOpen}
           />
-        }
 
-        {/* Catalog section */}
-        <View style={{ height: 40 }} />
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
-          {/* FIX 6: Guard against null currBook before rendering */}
-          {currBook && (
-            <View style={styles.lastRead}>
-              <TouchableOpacity
-                style={styles.firstBook}
-                onPress={() => handleOpenBook(currBook, currUser)}
-              >
-                <RNImage
-                  source={{ uri: currBook.cover }}
-                  style={styles.bookImages}
-                />
-                <Text style={styles.bookTitle}>{currBook.title}</Text>
-              </TouchableOpacity>
+          <View style={{ height: verticalScale(65) }} />
+          <ScrollView contentContainerStyle={s.scrollContainer}>
+            {currBook && (
+              <View style={s.lastRead}>
+                <TouchableOpacity
+                  style={s.firstBook}
+                  onPress={() => handleOpenBook(currBook, currUser)}
+                >
+                  <RNImage
+                    source={{ uri: currBook.cover }}
+                    style={s.bookImages}
+                  />
+                  <Text style={s.bookTitle}>{currBook.title}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={s.catalog}>
+              {[
+                { label: "Recommended", data: recommended },
+                { label: "Teacher Uploads", data: teacherMaterials },
+                { label: "Student Uploads", data: studentUploads },
+                { label: "Books from Ella", data: appBooks },
+              ].map(({ label, data }) => (
+                <View key={label}>
+                  <Text style={s.catalogTitle}>{label}</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {data.map((book) => (
+                      <TouchableOpacity
+                        key={book.id}
+                        style={s.bookCard}
+                        onPress={() => handleOpenBook(book, currUser)}
+                      >
+                        <RNImage
+                          source={{ uri: book.cover }}
+                          style={s.bookImage}
+                        />
+                        <Text style={s.bookLabel}>{book.title}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ))}
             </View>
-          )}
+          </ScrollView>
+        </View>
 
-          <View style={styles.catalog}>
-            {/* Recommended */}
-            <Text style={styles.catalogTitle}>Recommended</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {recommended.map((book) => (
-                <TouchableOpacity
-                  key={book.bookId}
-                  style={styles.bookCard}
-                  onPress={() => handleOpenBook(book, currUser)}
-                >
-                  <RNImage
-                    source={{ uri: book.cover }}
-                    style={styles.bookImage}
-                  />
-                  <Text style={styles.bookLabel}>{book.title}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Teacher Uploads */}
-            <Text style={styles.catalogTitle}>Teacher Uploads</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {teacherMaterials.map((book) => (
-                <TouchableOpacity
-                  key={book.bookId}
-                  style={styles.bookCard}
-                  onPress={() => handleOpenBook(book, currUser)}
-                >
-                  <RNImage
-                    source={{ uri: book.cover }}
-                    style={styles.bookImage}
-                  />
-                  <Text style={styles.bookLabel}>{book.title}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Student Uploads */}
-            <Text style={styles.catalogTitle}>Student Uploads</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {studentUploads.map((book) => (
-                <TouchableOpacity
-                  key={book.bookId}
-                  style={styles.bookCard}
-                  onPress={() => handleOpenBook(book, currUser)}
-                >
-                  <RNImage
-                    source={{ uri: book.cover }}
-                    style={styles.bookImage}
-                  />
-                  <Text style={styles.bookLabel}>{book.title}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Books from Ella */}
-            <Text style={styles.catalogTitle}>Books from Ella</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {appBooks.map((book) => (
-                <TouchableOpacity
-                  key={book.bookId}
-                  style={styles.bookCard}
-                  onPress={() => handleOpenBook(book, currUser)}
-                >
-                  <RNImage
-                    source={{ uri: book.cover }}
-                    style={styles.bookImage}
-                  />
-                  <Text style={styles.bookLabel}>{book.title}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </ScrollView>
-
-        {/* Footer */}
-        <View style={styles.footer}>
+        {/* Footer — anchored to bottom of root container, no insets */}
+        <View style={s.footer}>
           <TouchableOpacity
-            style={[styles.footerButton, styles.activeFooterButton]}
+            style={s.footerButton}
             onPress={() => setCurrRoute(1)}
           >
             <Ionicons
               name="library-outline"
-              size={24}
+              size={scale(24)}
               color={currRoute === 1 ? "#FF9149" : "#fff"}
             />
             <Text
-              style={[styles.footerButtonText, styles.activeFooterButtonText]}
+              style={[
+                s.footerButtonText,
+                currRoute === 1 && s.activeFooterButtonText,
+              ]}
             >
               Library
             </Text>
           </TouchableOpacity>
-
           <TouchableOpacity
-            style={styles.footerButton}
+            style={s.footerButton}
             onPress={() => {
               setCurrRoute(0);
               navigation.navigate("Prizes", { currUser });
@@ -343,47 +261,46 @@ export default function HomeScreen() {
           >
             <Ionicons
               name="diamond-outline"
-              size={24}
+              size={scale(24)}
               color={currRoute === 0 ? "#FF9149" : "#fff"}
             />
-            {/* FIX 4: color prop moved into style instead of as a direct prop */}
-            <Text style={[styles.footerButtonText, { color: "#FF9149" }]}>
+            <Text
+              style={[
+                s.footerButtonText,
+                currRoute === 0 && s.activeFooterButtonText,
+              ]}
+            >
               Prizes
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Exit Confirmation Dialog */}
         <Modal
           visible={isExitDialogOpen}
-          transparent={true}
+          transparent
           animationType="fade"
-          onRequestClose={handleExitDialogClose}
+          onRequestClose={() => setIsExitDialogOpen(false)}
         >
-          <View style={styles.exitDialogOverlay}>
-            <View style={styles.exitDialogContainer}>
-              <Text style={styles.exitDialogTitle}>Stop Reading?</Text>
-
-              <View style={styles.exitDialogButtons}>
+          <View style={s.exitDialogOverlay}>
+            <View style={s.exitDialogContainer}>
+              <Text style={s.exitDialogTitle}>Stop Reading?</Text>
+              <View style={s.exitDialogButtons}>
                 <TouchableOpacity
-                  style={styles.exitDialogButtonYes}
-                  onPress={handleExitApp}
+                  style={s.exitDialogButtonYes}
+                  onPress={() => {
+                    setIsExitDialogOpen(false);
+                    BackHandler.exitApp();
+                  }}
                 >
                   <Ionicons name="checkmark" size={20} color="#fff" />
-                  <Text style={styles.exitDialogButtonText}>Yes</Text>
+                  <Text style={s.exitDialogButtonText}>Yes</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
-                  style={styles.exitDialogButtonNo}
-                  onPress={handleExitDialogClose}
+                  style={s.exitDialogButtonNo}
+                  onPress={() => setIsExitDialogOpen(false)}
                 >
                   <Ionicons name="close" size={20} color="#fff" />
-                  {/* FIX 4: color prop moved into style instead of as a direct prop */}
-                  <Text
-                    style={[styles.exitDialogButtonText, { color: "#fff" }]}
-                  >
-                    No
-                  </Text>
+                  <Text style={s.exitDialogButtonText}>No</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -394,248 +311,162 @@ export default function HomeScreen() {
   );
 }
 
-//Styling
-const styles = StyleSheet.create({
-  background: {
-    flex: 1,
-    width: "100%",
-    height: "100%",
-  },
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "flex-start",
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(96, 181, 255, 0.85)",
-    width: "100%",
-    alignItems: "center",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    width: "95%",
-    marginBottom: 30,
-    marginTop: 30,
-  },
-  avatarContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 30,
-    marginLeft: 10,
-  },
-  characterImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 50,
-    backgroundColor: "#fff",
-    overflow: "hidden",
-  },
-  headerText: {
-    flexDirection: "column",
-    flex: 1,
-    alignItems: "center",
-  },
-  title: {
-    fontFamily: "PixelifySans",
-    fontSize: 24,
-    textAlign: "center",
-    color: "#fff",
-  },
-  subTitle: {
-    fontFamily: "PixelifySans",
-    fontSize: 12,
-    textAlign: "center",
-    color: "#fff",
-  },
-  menu: {
-    fontSize: 40,
-    color: "#fff",
-  },
-  content: {
-    flex: 1,
-  },
-  readText: {
-    fontFamily: "Mochi",
-    fontSize: 36,
-    color: "#fff",
-    textAlign: "center",
-  },
-  badgeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.2)",
-    borderColor: "white",
-    borderWidth: 1,
-    borderRadius: 50,
-    paddingVertical: 1,
-    paddingHorizontal: 10,
-    marginRight: 10,
-  },
-  diamondIcon: {
-    width: 20,
-    height: 20,
-    marginRight: 8,
-  },
-  amountText: {
-    color: "white",
-    fontSize: 10,
-    fontFamily: "Mochi",
-  },
-  lastRead: {
-    alignItems: "center",
-  },
-  firstBook: {
-    borderRadius: 15,
-    width: "60%",
-    alignItems: "center",
-  },
-  bookImages: {
-    width: "100%",
-    height: 130,
-    borderRadius: 10,
-  },
-  bookImage: {
-    width: "100%",
-    height: 130,
-    borderRadius: 10,
-  },
-  bookTitle: {
-    fontFamily: "Poppins",
-    fontSize: 16,
-    color: "#000000ff",
-  },
-  scrollContainer: {
-    paddingBottom: 100,
-  },
-  catalog: {
-    flex: 1,
-    width: "100%",
-    paddingHorizontal: 20,
-    marginTop: 10,
-  },
-  section: {
-    marginBottom: 25,
-  },
-  catalogTitle: {
-    fontFamily: "Mochi",
-    fontSize: 16,
-    color: "#FF9149",
-    marginBottom: 10,
-    textAlign: "left",
-  },
-  carousel: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  bookCard: {
-    width: 110,
-    height: 160,
-    borderRadius: 10,
-    overflow: "hidden",
-    alignItems: "center",
-    margin: 10,
-  },
-  bookCover: {
-    width: "100%",
-    height: 120,
-  },
-  bookLabel: {
-    fontFamily: "Poppins",
-    fontSize: 10,
-    color: "#000000ff",
-    textAlign: "center",
-    paddingHorizontal: 5,
-    marginTop: 5,
-  },
-  footer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 70,
-    flexDirection: "row",
-    backgroundColor: "#60B5FF",
-    paddingHorizontal: 20,
-    justifyContent: "space-around",
-    alignItems: "center",
-  },
-  footerButton: {
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  activeFooterButton: {},
-  footerButtonText: {
-    fontFamily: "Poppins",
-    fontSize: 12,
-    marginTop: 5,
-  },
-  activeFooterButtonText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  exitDialogOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  exitDialogContainer: {
-    backgroundColor: "#FF9149",
-    borderRadius: 20,
-    padding: 30,
-    alignItems: "center",
-    width: "70%",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
+const getStyles = (scale, verticalScale) =>
+  StyleSheet.create({
+    background: { flex: 1, width: "100%", height: "100%" },
+
+    // Root container — no padding, so footer absolute position is always correct
+    container: { flex: 1 },
+
+    // Inner content area — takes up all space above the footer
+    content: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "flex-start",
+      marginBottom: verticalScale(70),
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  exitDialogTitle: {
-    fontFamily: "PixelifySans",
-    fontSize: 18,
-    color: "#fff",
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  exitDialogButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-  },
-  exitDialogButtonYes: {
-    backgroundColor: "#FF4444",
-    borderRadius: 15,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    minWidth: 80,
-    justifyContent: "center",
-  },
-  exitDialogButtonNo: {
-    backgroundColor: "#4444FF",
-    borderRadius: 15,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    minWidth: 80,
-    justifyContent: "center",
-  },
-  exitDialogButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontFamily: "PixelifySans",
-    fontWeight: "bold",
-    marginLeft: 5,
-  },
-});
+
+    loadingText: {
+      fontFamily: "PixelifySans",
+      fontSize: scale(16),
+      textAlign: "center",
+      color: "#fff",
+    },
+    readTextContainer: { alignItems: "center" },
+    readText: {
+      fontFamily: "Mochi",
+      fontSize: scale(36),
+      color: "#fff",
+      textAlign: "center",
+    },
+    lastRead: { alignItems: "center" },
+    firstBook: { borderRadius: scale(15), width: "60%", alignItems: "center" },
+    bookImages: {
+      width: "100%",
+      height: verticalScale(130),
+      borderRadius: scale(10),
+    },
+    bookTitle: {
+      fontFamily: "Poppins",
+      fontSize: scale(16),
+      color: "#000000ff",
+    },
+    scrollContainer: { paddingBottom: verticalScale(20) },
+    catalog: {
+      flex: 1,
+      width: "100%",
+      paddingHorizontal: scale(20),
+      marginTop: verticalScale(10),
+    },
+    catalogTitle: {
+      fontFamily: "Mochi",
+      fontSize: scale(16),
+      color: "#FF9149",
+      marginBottom: verticalScale(10),
+      textAlign: "left",
+    },
+    bookCard: {
+      width: scale(110),
+      minHeight: verticalScale(160),
+      borderRadius: scale(10),
+      overflow: "visible",
+      alignItems: "center",
+      margin: scale(10),
+    },
+    bookImage: {
+      width: scale(110),
+      height: verticalScale(120),
+      borderRadius: scale(10),
+    },
+    bookLabel: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      color: "#000000ff",
+      textAlign: "center",
+      paddingHorizontal: scale(5),
+      marginTop: verticalScale(5),
+      width: scale(110),
+      flexWrap: "wrap",
+    },
+
+    // Footer — position absolute, anchored to bottom, no insets
+    footer: {
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: verticalScale(70),
+      flexDirection: "row",
+      backgroundColor: "#60B5FF",
+      paddingHorizontal: scale(20),
+      justifyContent: "space-around",
+      alignItems: "center",
+    },
+    footerButton: {
+      alignItems: "center",
+      paddingVertical: verticalScale(10),
+      paddingHorizontal: scale(20),
+    },
+    footerButtonText: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      marginTop: verticalScale(5),
+      color: "#fff",
+    },
+    activeFooterButtonText: { color: "#FF9149", fontWeight: "bold" },
+
+    exitDialogOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    exitDialogContainer: {
+      backgroundColor: "#FF9149",
+      borderRadius: scale(20),
+      padding: scale(30),
+      alignItems: "center",
+      width: "70%",
+      elevation: 5,
+    },
+    exitDialogTitle: {
+      fontFamily: "PixelifySans",
+      fontSize: scale(18),
+      color: "#fff",
+      fontWeight: "bold",
+      marginBottom: verticalScale(20),
+      textAlign: "center",
+    },
+    exitDialogButtons: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      width: "100%",
+    },
+    exitDialogButtonYes: {
+      backgroundColor: "#FF4444",
+      borderRadius: scale(15),
+      paddingVertical: verticalScale(10),
+      paddingHorizontal: scale(20),
+      flexDirection: "row",
+      alignItems: "center",
+      minWidth: scale(80),
+      justifyContent: "center",
+    },
+    exitDialogButtonNo: {
+      backgroundColor: "#4444FF",
+      borderRadius: scale(15),
+      paddingVertical: verticalScale(10),
+      paddingHorizontal: scale(20),
+      flexDirection: "row",
+      alignItems: "center",
+      minWidth: scale(80),
+      justifyContent: "center",
+    },
+    exitDialogButtonText: {
+      color: "#fff",
+      fontSize: scale(14),
+      fontFamily: "PixelifySans",
+      fontWeight: "bold",
+      marginLeft: scale(5),
+    },
+  });

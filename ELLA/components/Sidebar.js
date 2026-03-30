@@ -6,13 +6,11 @@ import {
   Animated,
   Modal,
   StyleSheet,
-  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
-import { auth } from "../firebase";
-import { signOut } from "firebase/auth";
+import EnrollModal from "../Screen/EnrollModal";
 
 export default function Sidebar({
   isMenuOpen,
@@ -23,30 +21,40 @@ export default function Sidebar({
   setIsExitDialogOpen,
 }) {
   const navigation = useNavigation();
-  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [enrollModalVisible, setEnrollModalVisible] = useState(false);
 
-  const handleLogout = async () => {
-    try {
-      setLoggingOut(true);
-      await signOut(auth);
-      setLogoutModalVisible(false);
-      handleMenuPress(); // close sidebar
-      // Replace entire stack so user can't go back after logout
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "StartUp" }],
-      });
-    } catch (error) {
-      console.log("Logout error:", error);
-      Alert.alert("Error", "Failed to log out. Please try again.");
-    } finally {
-      setLoggingOut(false);
-    }
+  const isTeacher = currUser?.role === "Teacher";
+  const isEnrolled = !!currUser?.classEnrolled;
+
+  // ── Navigate to User Profile ──────────────────────────────
+  const handleUserPress = () => {
+    handleMenuPress(); // close sidebar first
+    navigation.navigate("UserProfile", { currUser, characterImages });
+  };
+
+  // ── Teacher: Manage Class ─────────────────────────────────
+  const handleManageClass = () => {
+    handleMenuPress();
+    // TODO: navigation.navigate("ManageClass", { currUser });
+    console.log("Manage class pressed");
+  };
+
+  // ── Student: View Class ───────────────────────────────────
+  const handleViewClass = () => {
+    handleMenuPress();
+    // TODO: navigation.navigate("ClassScreen", { classCode: currUser.classEnrolled });
+    console.log("View class pressed — classEnrolled:", currUser?.classEnrolled);
+  };
+
+  // ── Student: Enroll ───────────────────────────────────────
+  const handleEnroll = () => {
+    handleMenuPress();
+    setEnrollModalVisible(true);
   };
 
   return (
     <>
+      {/* ── Main Sidebar Modal ── */}
       <Modal
         visible={isMenuOpen}
         transparent={true}
@@ -65,6 +73,7 @@ export default function Sidebar({
               { transform: [{ translateX: slideAnim }] },
             ]}
           >
+            {/* Title */}
             <View style={styles.titleSection}>
               <Text style={styles.menuTitle}>ELLA</Text>
               <Text style={styles.menuSubtitle}>Your English Buddy</Text>
@@ -73,10 +82,10 @@ export default function Sidebar({
             <View style={styles.spacing} />
             <View style={styles.horizontalLine} />
 
-            {/* User section — tap to open logout menu */}
+            {/* ── User Section → goes to UserProfile ── */}
             <TouchableOpacity
               style={[styles.userSection, { paddingHorizontal: 20 }]}
-              onPress={() => setLogoutModalVisible(true)}
+              onPress={handleUserPress}
             >
               <View style={styles.userSettings}>
                 <Image
@@ -87,28 +96,59 @@ export default function Sidebar({
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>{currUser.name}</Text>
                 <Text style={styles.userRole}>{currUser.role}</Text>
+                {isEnrolled && !isTeacher && (
+                  <View style={styles.enrolledBadge}>
+                    <Text style={styles.enrolledBadgeText}>
+                      Class: {currUser.classEnrolled}
+                    </Text>
+                  </View>
+                )}
               </View>
               <Ionicons name="chevron-forward" size={18} color="#aaa" />
             </TouchableOpacity>
 
             <View style={styles.horizontalLine} />
 
+            {/* Settings */}
             <TouchableOpacity
               style={styles.menuButton}
-              onPress={() => navigation.navigate("Settings")}
+              onPress={() => {
+                handleMenuPress();
+                navigation.navigate("Settings");
+              }}
             >
               <Ionicons name="settings-outline" size={24} color="#333" />
               <Text style={styles.menuButtonText}>Settings</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.menuButton}
-              onPress={() => console.log("Enroll to class pressed")}
-            >
-              <Ionicons name="add-circle-outline" size={24} color="#333" />
-              <Text style={styles.menuButtonText}>Enroll to class</Text>
-            </TouchableOpacity>
+            {/* ── Teacher: Manage Class / Student: Enroll or View Class ── */}
+            {isTeacher ? (
+              <TouchableOpacity
+                style={styles.menuButton}
+                onPress={handleManageClass}
+              >
+                <Ionicons name="people-circle-outline" size={26} color="#333" />
+                <Text style={styles.menuButtonText}>Manage Class</Text>
+              </TouchableOpacity>
+            ) : isEnrolled ? (
+              <TouchableOpacity
+                style={styles.menuButton}
+                onPress={handleViewClass}
+              >
+                <Ionicons name="book-outline" size={24} color="#333" />
+                <Text style={styles.menuButtonText}>View Class</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.menuButton}
+                onPress={handleEnroll}
+              >
+                <Ionicons name="add-circle-outline" size={24} color="#333" />
+                <Text style={styles.menuButtonText}>Enroll to class</Text>
+              </TouchableOpacity>
+            )}
 
+            {/* Contact Us */}
             <TouchableOpacity
               style={styles.menuButton}
               onPress={() => console.log("Contact us pressed")}
@@ -119,6 +159,7 @@ export default function Sidebar({
 
             <View style={styles.horizontalLine} />
 
+            {/* About */}
             <TouchableOpacity
               style={styles.menuButton}
               onPress={() => console.log("About ELLA pressed")}
@@ -127,10 +168,14 @@ export default function Sidebar({
               <Text style={styles.menuButtonText}>About ELLA</Text>
             </TouchableOpacity>
 
+            {/* Exit */}
             <View style={styles.exitButtonContainer}>
               <TouchableOpacity
                 style={styles.exitButton}
-                onPress={() => setIsExitDialogOpen(true)}
+                onPress={() => {
+                  handleMenuPress();
+                  setIsExitDialogOpen(true);
+                }}
               >
                 <Ionicons name="exit-outline" size={16} color="#fff" />
                 <Text style={styles.exitButtonText}>Exit</Text>
@@ -140,53 +185,11 @@ export default function Sidebar({
         </View>
       </Modal>
 
-      {/* Logout Confirmation Modal */}
-      <Modal
-        visible={logoutModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setLogoutModalVisible(false)}
-      >
-        <View style={styles.logoutOverlay}>
-          <View style={styles.logoutContainer}>
-            {/* User info at top of modal */}
-            <Image
-              source={characterImages[currUser.character]}
-              style={styles.logoutAvatar}
-            />
-            <Text style={styles.logoutName}>{currUser.name}</Text>
-            <Text style={styles.logoutRole}>{currUser.role}</Text>
-
-            <View style={styles.logoutDivider} />
-
-            <Text style={styles.logoutQuestion}>Do you want to log out?</Text>
-
-            <View style={styles.logoutButtons}>
-              <TouchableOpacity
-                style={styles.logoutCancelButton}
-                onPress={() => setLogoutModalVisible(false)}
-                disabled={loggingOut}
-              >
-                <Text style={styles.logoutCancelText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.logoutConfirmButton,
-                  loggingOut && { opacity: 0.6 },
-                ]}
-                onPress={handleLogout}
-                disabled={loggingOut}
-              >
-                <Ionicons name="log-out-outline" size={18} color="#fff" />
-                <Text style={styles.logoutConfirmText}>
-                  {loggingOut ? "Logging out..." : "Log Out"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* ── Enroll Modal (students only) ── */}
+      <EnrollModal
+        visible={enrollModalVisible}
+        onClose={() => setEnrollModalVisible(false)}
+      />
     </>
   );
 }
@@ -197,9 +200,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     flexDirection: "row",
   },
-  modalBackground: {
-    flex: 1,
-  },
+  modalBackground: { flex: 1 },
   menuContainer: {
     position: "absolute",
     left: 0,
@@ -237,9 +238,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 20,
   },
-  spacing: {
-    height: 30,
-  },
+  spacing: { height: 30 },
   horizontalLine: {
     height: 1,
     backgroundColor: "#ddd",
@@ -251,14 +250,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
     paddingVertical: 10,
-    paddingHorizontal: 0,
-    marginHorizontal: 0,
   },
   userSettings: {
     alignItems: "center",
     justifyContent: "center",
     marginRight: 25,
-    marginLeft: 0,
   },
   userAvatar: {
     width: 50,
@@ -269,9 +265,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#000",
   },
-  userInfo: {
-    flex: 1,
-  },
+  userInfo: { flex: 1 },
   userName: {
     fontFamily: "Poppins",
     fontSize: 19,
@@ -283,11 +277,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#666",
   },
+  enrolledBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  enrolledBadgeText: {
+    fontFamily: "Poppins",
+    fontSize: 11,
+    color: "#FF9149",
+  },
   menuButton: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 15,
-    paddingHorizontal: 20,
+    paddingHorizontal: 25,
     width: "100%",
   },
   menuButtonText: {
@@ -320,86 +325,5 @@ const styles = StyleSheet.create({
     fontFamily: "PixelifySans",
     fontWeight: "bold",
     marginLeft: 4,
-  },
-
-  // Logout modal
-  logoutOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  logoutContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    padding: 28,
-    width: "78%",
-    alignItems: "center",
-    elevation: 10,
-  },
-  logoutAvatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: "#f0f0f0",
-    borderWidth: 2,
-    borderColor: "#FF9149",
-    marginBottom: 10,
-  },
-  logoutName: {
-    fontFamily: "Poppins",
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  logoutRole: {
-    fontFamily: "Poppins",
-    fontSize: 12,
-    color: "#888",
-    marginBottom: 6,
-  },
-  logoutDivider: {
-    height: 1,
-    backgroundColor: "#eee",
-    width: "100%",
-    marginVertical: 16,
-  },
-  logoutQuestion: {
-    fontFamily: "Poppins",
-    fontSize: 15,
-    color: "#444",
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  logoutButtons: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  logoutCancelButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: "#ccc",
-  },
-  logoutCancelText: {
-    fontFamily: "Poppins",
-    fontSize: 14,
-    color: "#555",
-  },
-  logoutConfirmButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    backgroundColor: "#E53935",
-  },
-  logoutConfirmText: {
-    fontFamily: "Poppins",
-    fontSize: 14,
-    color: "#fff",
-    fontWeight: "bold",
   },
 });
