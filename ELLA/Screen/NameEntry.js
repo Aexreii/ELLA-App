@@ -5,6 +5,8 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Modal,
+  ActivityIndicator,
   Alert,
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
@@ -12,7 +14,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
 import { auth } from "../firebase";
-import { getFirestore, doc, updateDoc, getDoc } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  updateDoc,
+  getDoc,
+  writeBatch,
+} from "firebase/firestore";
 import { useScale } from "../utils/scaling";
 import CustomSlider from "../components/CustomSlider";
 
@@ -24,6 +32,7 @@ export default function NameEntry() {
   const [age, setAge] = useState(null);
   const [low, setLow] = useState(null);
   const [high, setHigh] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -51,19 +60,62 @@ export default function NameEntry() {
       Alert.alert("Error!", "Please enter your name!");
       return;
     }
+
+    setIsSaving(true);
     try {
       const user = auth.currentUser;
       if (!user) {
         Alert.alert("Error", "User not logged in");
+        setIsSaving(false);
         return;
       }
+
       const db = getFirestore();
       const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, { name: name.trim(), age: age });
-      console.log("Name saved:", name);
+
+      // 1. Get current user data to retrieve the classCode
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+        Alert.alert("Error", "User profile not found.");
+        setIsSaving(false);
+        return;
+      }
+      const userData = userSnap.data();
+
+      const batch = writeBatch(db);
+      const cleanName = name.trim();
+
+      // 2. Update the User profile with name and age
+      batch.update(userRef, {
+        name: cleanName,
+        age: age,
+      });
+
+      // 3. If Teacher, update their assigned class
+      if (userData.role === "Teacher") {
+        const classCode = userData.classCode; // The unique code we saved in RoleSelect
+
+        if (classCode) {
+          const classRef = doc(db, "classes", classCode);
+
+          batch.update(classRef, {
+            teacherName: cleanName,
+            className: `${cleanName}'s Class`,
+          });
+        } else {
+          console.log("No classCode found for this teacher yet.");
+        }
+      }
+
+      // 4. Commit all changes
+      await batch.commit();
+
+      console.log("Name and Class updated successfully for:", cleanName);
+      setIsSaving(false);
       navigation.navigate("HomeScreen");
     } catch (error) {
-      console.log(error);
+      console.log("NameEntry Error:", error);
+      setIsSaving(false);
       Alert.alert("Error", error.message);
     }
   };
@@ -72,6 +124,15 @@ export default function NameEntry() {
 
   return (
     <View style={s.container}>
+      <Modal transparent visible={isSaving} animationType="fade">
+        <View style={s.overlay}>
+          <View style={s.loadingBox}>
+            <ActivityIndicator size="large" color="#FF9149" />
+            <Text style={s.loadingText}>Saving your profile...</Text>
+          </View>
+        </View>
+      </Modal>
+
       <TouchableOpacity
         style={s.closeButton}
         onPress={() => {
@@ -131,6 +192,25 @@ const getStyles = (scale, verticalScale) =>
       backgroundColor: "#60B5FF",
       alignItems: "center",
       justifyContent: "center",
+    },
+    overlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    loadingBox: {
+      backgroundColor: "#fff",
+      padding: scale(30),
+      borderRadius: scale(20),
+      alignItems: "center",
+      gap: scale(10),
+    },
+    loadingText: {
+      fontFamily: "Poppins",
+      fontSize: scale(14),
+      color: "#333",
+      marginTop: scale(10),
     },
     closeButton: {
       position: "absolute",

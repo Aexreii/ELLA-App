@@ -79,7 +79,7 @@ export default function EnrollModal({ visible, onClose }) {
       if (alreadyEnrolled) {
         Alert.alert(
           "Already Enrolled",
-          `You are already enrolled in "${classData.name}".`,
+          `You are already enrolled in this class".`,
         );
         setLoading(false);
         return;
@@ -90,10 +90,9 @@ export default function EnrollModal({ visible, onClose }) {
         students: arrayUnion(user.uid),
       });
 
-      // Add class to student's profile
       const userRef = doc(db, "users", user.uid);
       await updateDoc(userRef, {
-        enrolledClasses: arrayUnion(classDoc.id),
+        classEnrolled: classDoc.id,
       });
 
       setEnrolledClassName(classData.name || "your class");
@@ -133,10 +132,7 @@ export default function EnrollModal({ visible, onClose }) {
                 />
               </View>
               <Text style={s.successTitle}>You're Enrolled!</Text>
-              <Text style={s.successSub}>
-                You've successfully joined{"\n"}
-                <Text style={s.successClassName}>"{enrolledClassName}"</Text>
-              </Text>
+              <Text style={s.successSub}>You've successfully joined{"\n"}</Text>
               <TouchableOpacity style={s.doneButton} onPress={handleClose}>
                 <Text style={s.doneButtonText}>Let's Go!</Text>
               </TouchableOpacity>
@@ -311,10 +307,6 @@ const getStyles = (scale, verticalScale) =>
       textAlign: "center",
       lineHeight: scale(20),
       marginBottom: verticalScale(20),
-    },
-    successClassName: {
-      fontFamily: "PixelifySans",
-      color: "#FF9149",
     },
     doneButton: {
       backgroundColor: "#FF9149",

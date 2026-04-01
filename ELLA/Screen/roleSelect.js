@@ -4,37 +4,91 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { auth } from "../firebase";
-import { getFirestore, doc, updateDoc } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  updateDoc,
+  collection,
+  getDoc,
+  writeBatch,
+  serverTimestamp,
+} from "firebase/firestore";
 import useAppFonts from "../hook/useAppFonts";
 import { useScale } from "../utils/scaling";
 
 export default function RoleSelect() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { userName } = route.params || {};
   const [role, setRole] = useState(null);
   const fontsLoaded = useAppFonts();
   const { scale, verticalScale } = useScale();
 
   if (!fontsLoaded) return null;
 
+  const generateClassCode = () => {
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789qwertyuiopasdfghjklzxcvm";
+    let result = "";
+    for (let i = 0; i < 8; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
+  const getUniqueClassCode = async (db) => {
+    const newCode = generateClassCode();
+    const classRef = doc(db, "classes", newCode);
+    const docSnap = await getDoc(classRef);
+
+    if (docSnap.exists()) {
+      console.log("Collision detected for code:", newCode, "Retrying...");
+      return await getUniqueClassCode(db);
+    }
+
+    return newCode;
+  };
   const handleRole = async (selectedRole) => {
     setRole(selectedRole);
-    console.log("Role selected:", selectedRole, userName);
     try {
       const user = auth.currentUser;
-      if (!user) {
-        Alert.alert("Error", "User not logged in");
-        return;
-      }
       const db = getFirestore();
+      const batch = writeBatch(db);
       const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, { role: selectedRole });
-      console.log("Role saved:", selectedRole);
+
+      if (selectedRole === "Teacher") {
+        // 1. Get the 8-char string
+        const classCode = await getUniqueClassCode(db);
+
+        // 2. Define the Document Reference correctly
+        // Path: classes (collection) -> classCode (document)
+        const newClassRef = doc(db, "classes", classCode);
+
+        // 3. Set the data
+        batch.set(newClassRef, {
+          className: `${user.name}'s Class`,
+          code: classCode,
+          teacherID: user.uid,
+          teacherName: user.name || "Teacher",
+          createdAt: serverTimestamp(),
+          students: [],
+          bookId: [],
+        });
+
+        // 4. Update the Teacher's profile
+        batch.update(userRef, {
+          role: selectedRole,
+          ownedClassId: classCode,
+          classCode: classCode,
+        });
+      } else {
+        batch.update(userRef, { role: selectedRole });
+      }
+
+      await batch.commit();
       navigation.navigate("NameEntry", { userRole: selectedRole });
     } catch (error) {
-      console.log(error);
-      Alert.alert("Error", error.message);
+      console.log("Firebase Path Error:", error);
+      Alert.alert("Error", "Failed to create class path. Please try again.");
     }
   };
 

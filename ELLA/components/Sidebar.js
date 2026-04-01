@@ -24,25 +24,29 @@ export default function Sidebar({
   const [enrollModalVisible, setEnrollModalVisible] = useState(false);
 
   const isTeacher = currUser?.role === "Teacher";
+
+  // ── FIX: The DB field is classEnrolled (a single string), NOT enrolledClasses
+  // (an array). Checking enrolledClasses always returned [] → isEnrolled was
+  // always false → badge never showed and Enroll button never changed to View Class.
   const isEnrolled = !!currUser?.classEnrolled;
 
   // ── Navigate to User Profile ──────────────────────────────
   const handleUserPress = () => {
-    handleMenuPress(); // close sidebar first
+    handleMenuPress();
     navigation.navigate("UserProfile", { currUser, characterImages });
   };
 
   // ── Teacher: Manage Class ─────────────────────────────────
   const handleManageClass = () => {
     handleMenuPress();
-    // TODO: navigation.navigate("ManageClass", { currUser });
-    console.log("Manage class pressed");
+    navigation.navigate("ManageClass");
   };
 
   // ── Student: View Class ───────────────────────────────────
   const handleViewClass = () => {
     handleMenuPress();
-    // TODO: navigation.navigate("ClassScreen", { classCode: currUser.classEnrolled });
+    // Navigate to class screen — classEnrolled holds the classId
+    navigation.navigate("TeacherBooks"); // reuse or replace with a StudentClassScreen
     console.log("View class pressed — classEnrolled:", currUser?.classEnrolled);
   };
 
@@ -96,11 +100,16 @@ export default function Sidebar({
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>{currUser.name}</Text>
                 <Text style={styles.userRole}>{currUser.role}</Text>
+                {/* ── FIX: badge now shows correctly when classEnrolled is set ── */}
                 {isEnrolled && !isTeacher && (
                   <View style={styles.enrolledBadge}>
-                    <Text style={styles.enrolledBadgeText}>
-                      Class: {currUser.classEnrolled}
-                    </Text>
+                    <Ionicons
+                      name="school-outline"
+                      size={11}
+                      color="#FF9149"
+                      style={{ marginRight: 3 }}
+                    />
+                    <Text style={styles.enrolledBadgeText}>Enrolled</Text>
                   </View>
                 )}
               </View>
@@ -280,7 +289,6 @@ const styles = StyleSheet.create({
   enrolledBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
     marginTop: 2,
   },
   enrolledBadgeText: {
