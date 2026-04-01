@@ -20,6 +20,9 @@ import ReadBook from "./Screen/ReadBook";
 import UserProfile from "./Screen/UserProfile";
 import Prizes from "./Screen/Prizes";
 import Settings from "./Screen/Settings";
+import ManageClass from "./Screen/ManageClass";
+import TeacherBooks from "./Screen/TeacherBooks";
+import UploadBook from "./Screen/uploadBook";
 
 const Stack = createNativeStackNavigator();
 
@@ -58,6 +61,9 @@ export default function App() {
             <Stack.Screen name="ReadBook" component={ReadBook} />
             <Stack.Screen name="Settings" component={Settings} />
             <Stack.Screen name="Prizes" component={Prizes} />
+            <Stack.Screen name="ManageClass" component={ManageClass} />
+            <Stack.Screen name="TeacherBooks" component={TeacherBooks} />
+            <Stack.Screen name="UploadBook" component={UploadBook} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>

@@ -4,6 +4,8 @@ import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 
+import { getStorage } from "firebase/storage";
+
 const firebaseConfig = {
   apiKey: "AIzaSyB_Yhi-_EOJXm1SAEIGLCu_PD1GVz3p49E",
   authDomain: "ella-firebase-b354f.firebaseapp.com",
@@ -34,3 +36,4 @@ isSupported().then((supported) => {
 
 export { app, auth, db };
 export default app;
+export const storage = getStorage(app);

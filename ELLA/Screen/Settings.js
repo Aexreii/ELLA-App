@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -16,26 +16,35 @@ export default function Settings() {
   const navigation = useNavigation();
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
-  const { setVolume } = useMusic();
 
-  const [musicVolume, setMusicVolume] = useState(0.4);
-  const [soundVolume, setSoundVolume] = useState(0.8);
-  const [textSize, setTextSize] = useState("Medium");
-  const [notifications, setNotifications] = useState(true);
+  // Pull everything from context — no local duplicates for audio values
+  const { setVolume, soundVolume, setSoundVolume } = useMusic();
 
-  const debounceTimer = useRef(null);
+  // Local state only for UI-only settings (not persisted in context)
+  const [musicVolume, setMusicVolume] = React.useState(0.4);
+  const [textSize, setTextSize] = React.useState("Medium");
+  const [notifications, setNotifications] = React.useState(true);
 
+  const musicDebounce = useRef(null);
+  const soundDebounce = useRef(null);
+
+  // Music slider — debounced so dragging doesn't spam setVolumeAsync
   const handleMusicChange = useCallback(
     (val) => {
-      // Update local state immediately so slider feels responsive
       setMusicVolume(val);
-      // Debounce the actual audio call — only fires 200ms after dragging stops
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      debounceTimer.current = setTimeout(() => {
-        setVolume(val);
-      }, 200);
+      if (musicDebounce.current) clearTimeout(musicDebounce.current);
+      musicDebounce.current = setTimeout(() => setVolume(val), 200);
     },
     [setVolume],
+  );
+
+  // Sound FX slider — updates context value (ReadBook reads it on next tap)
+  const handleSoundChange = useCallback(
+    (val) => {
+      if (soundDebounce.current) clearTimeout(soundDebounce.current);
+      soundDebounce.current = setTimeout(() => setSoundVolume(val), 200);
+    },
+    [setSoundVolume],
   );
 
   const s = getStyles(scale, verticalScale);
@@ -69,7 +78,10 @@ export default function Settings() {
 
           <View style={s.row}>
             <Text style={s.rowLabel}>Sound</Text>
-            <CustomSlider value={soundVolume} onValueChange={setSoundVolume} />
+            <CustomSlider
+              value={soundVolume}
+              onValueChange={handleSoundChange}
+            />
           </View>
         </View>
 
@@ -135,7 +147,7 @@ const getStyles = (scale, verticalScale) =>
       justifyContent: "space-between",
       backgroundColor: "#60B5FF",
       paddingHorizontal: scale(16),
-      paddingVertical: verticalScale(14),
+      paddingVertical: verticalScale(12),
     },
     backButton: {
       width: scale(40),

@@ -12,10 +12,10 @@ const MusicContext = createContext(null);
 export function MusicProvider({ children }) {
   const soundRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [soundVolume, setSoundVolume] = useState(0.8); // shared SFX volume
 
   useEffect(() => {
     loadMusic();
-
     return () => {
       if (soundRef.current) {
         soundRef.current.unloadAsync();
@@ -78,13 +78,11 @@ export function MusicProvider({ children }) {
   const setVolume = async (volume) => {
     try {
       if (!soundRef.current) return;
-      // Check the sound is loaded and not in background before setting volume
       const status = await soundRef.current.getStatusAsync();
       if (status.isLoaded) {
         await soundRef.current.setVolumeAsync(volume);
       }
     } catch (error) {
-      // Silently ignore background audio focus errors — not actionable
       if (!error.message?.includes("AudioFocusNotAcquired")) {
         console.log("Error setting volume:", error);
       }
@@ -93,14 +91,21 @@ export function MusicProvider({ children }) {
 
   return (
     <MusicContext.Provider
-      value={{ isPlaying, pauseMusic, resumeMusic, toggleMusic, setVolume }}
+      value={{
+        isPlaying,
+        pauseMusic,
+        resumeMusic,
+        toggleMusic,
+        setVolume,
+        soundVolume, // current SFX volume (0–1)
+        setSoundVolume, // call this from Settings slider
+      }}
     >
       {children}
     </MusicContext.Provider>
   );
 }
 
-// Hook to use in any screen
 export function useMusic() {
   const context = useContext(MusicContext);
   if (!context) {
