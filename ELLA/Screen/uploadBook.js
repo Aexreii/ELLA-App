@@ -15,8 +15,20 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  updateDoc,
+  arrayUnion,
+} from "firebase/firestore";
 import { auth } from "../firebase";
+import { useRoute } from "@react-navigation/native";
 import { useScale } from "../utils/scaling";
 
 // ── Cloudinary config ──────────────────────────────────────
@@ -46,13 +58,15 @@ const splitSentences = (text) => {
 const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"];
 
 export default function UploadBook() {
+  const route = useRoute();
+  const routeUser = route.params?.currUser ?? null;
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { scale, verticalScale } = useScale();
 
   const [title, setTitle] = useState("");
   const [writer, setWriter] = useState("");
-  const [publisher, setPublisher] = useState("Teacher Upload");
+  const [publisher, setPublisher] = useState("");
   const [difficulty, setDifficulty] = useState("Beginner");
   const [contentsText, setContentsText] = useState("");
   const [coverUri, setCoverUri] = useState(null);
@@ -118,6 +132,7 @@ export default function UploadBook() {
     return data.secure_url;
   };
 
+  const isTeacher = routeUser?.role === "Teacher";
   // ── Validate and upload book ──────────────────────────
   const handleUpload = async () => {
     if (!title.trim())
@@ -147,6 +162,7 @@ export default function UploadBook() {
       // Generate unique bookId
       const bookId = await generateBookId(db);
       const docId = `bookId${bookId}`;
+      const bookSource = isTeacher ? "Teacher" : "user";
 
       // Save to Firestore
       await setDoc(doc(db, "books", docId), {
@@ -158,12 +174,22 @@ export default function UploadBook() {
         contents: sentences,
         sentenceCount: sentences.length,
         cover: coverUrl,
-        source: "Teacher",
+        source: bookSource,
         uploadedById: uid,
       });
 
+      const classesRef = collection(db, "classes");
+      const classQuery = query(classesRef, where("teacherID", "==", uid));
+      const classSnap = await getDocs(classQuery);
+
+      if (!classSnap.empty) {
+        await updateDoc(doc(db, "classes", classSnap.docs[0].id), {
+          bookId: arrayUnion(bookId),
+        });
+      }
+
       Alert.alert("Success!", `"${title}" has been uploaded.`, [
-        { text: "OK", onPress: () => navigation.goBack() },
+        { text: "OK", onPress: () => navigation.navigate("HomeScreen") },
       ]);
     } catch (err) {
       console.log("Upload error:", err);
@@ -247,7 +273,7 @@ export default function UploadBook() {
           <Text style={s.label}>Published By</Text>
           <TextInput
             style={s.input}
-            placeholder="e.g. Teacher Upload"
+            placeholder="e.g. Adarna House"
             placeholderTextColor="#bbb"
             value={publisher}
             onChangeText={setPublisher}

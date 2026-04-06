@@ -29,6 +29,12 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
+import {
+  BACKEND_URL,
+  RECORDING_OPTIONS,
+  transcribeSentence,
+} from "../utils/speechHelper";
+
 // ─────────────────────────────────────────────────────────────
 // Feedback messages
 // ─────────────────────────────────────────────────────────────
@@ -58,6 +64,47 @@ const VOICE_FILES = {
   wrong_3: require("../assets/sounds/tagain.mp3"),
   wrong_4: require("../assets/sounds/tagain.mp3"),
 };
+
+// Aligns spoken words to expected words using dynamic programming
+// Returns an array matching expectedWords length:
+// "correct" = said correctly, "wrong" = said wrong or skipped
+function alignWords(expectedWords, spokenWords) {
+  const exp = expectedWords.map(cleanWord);
+  const spk = spokenWords.map(cleanWord).filter(Boolean);
+
+  const m = exp.length;
+  const n = spk.length;
+
+  // Build DP table for longest common subsequence
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (exp[i - 1] === spk[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  // Backtrack to find which expected words were matched
+  const matched = new Array(m).fill(false);
+  let i = m,
+    j = n;
+  while (i > 0 && j > 0) {
+    if (exp[i - 1] === spk[j - 1]) {
+      matched[i - 1] = true;
+      i--;
+      j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+
+  return matched.map((hit) => (hit ? "correct" : "wrong"));
+}
 
 function cleanWord(w) {
   return w.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
@@ -121,6 +168,7 @@ export default function ReadBook({ route, navigation }) {
 
   const [micActive, setMicActive] = useState(false);
   const recordingRef = useRef(null);
+  const recordingTimerRef = useRef(null);
 
   // ── CHANGED: sessionId is now deterministic = `${uid}_${sessionTimestamp}` ──
   const sessionIdRef = useRef(null);
@@ -150,9 +198,9 @@ export default function ReadBook({ route, navigation }) {
       resumeMusic();
       voiceSoundRef.current?.unloadAsync();
       if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+      if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current); // ← add this
     };
   }, []);
-
   const loadProgressAndCreateSession = async () => {
     try {
       const db = getFirestore();
@@ -434,8 +482,8 @@ export default function ReadBook({ route, navigation }) {
   // ─────────────────────────────────────────────────────────
   // 4. Points pop animation
   // ─────────────────────────────────────────────────────────
-  const triggerPointsPop = () => {
-    setShowPointsPop(true);
+  const triggerPointsPop = (points = 3) => {
+    setShowPointsPop(points);
     pointsPopAnim.setValue(0);
     Animated.sequence([
       Animated.spring(pointsPopAnim, {
@@ -453,20 +501,20 @@ export default function ReadBook({ route, navigation }) {
     ]).start(() => setShowPointsPop(false));
   };
 
-  const awardPoints = async (sentenceIndex) => {
+  const awardPoints = async (sentenceIndex, points = 3) => {
     if (awardedSentencesRef.current.has(sentenceIndex)) return;
     awardedSentencesRef.current.add(sentenceIndex);
 
-    setLocalPoints((p) => p + 10);
-    triggerPointsPop();
+    setLocalPoints((p) => p + points);
+    triggerPointsPop(points);
     try {
       const db = getFirestore();
       const uid = auth.currentUser?.uid;
       if (!uid) return;
-      await updateDoc(doc(db, "users", uid), { points: increment(10) });
+      await updateDoc(doc(db, "users", uid), { points: increment(points) });
       if (sessionIdRef.current) {
         await updateDoc(doc(db, "readingSessions", sessionIdRef.current), {
-          pointsEarned: increment(10),
+          pointsEarned: increment(points),
         });
       }
     } catch (e) {
@@ -583,14 +631,14 @@ export default function ReadBook({ route, navigation }) {
   // ─────────────────────────────────────────────────────────
   const handleMicPress = async () => {
     if (micActive) {
-      try {
-        await recordingRef.current.stopAndUnloadAsync();
-        recordingRef.current = null;
-        setMicActive(false);
-      } catch (error) {
-        Alert.alert("Error", "Failed to stop recording.");
+      // ── Manual stop ──────────────────────────────────────
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
+        recordingTimerRef.current = null;
       }
+      await stopAndEvaluate();
     } else {
+      // ── Start recording ──────────────────────────────────
       try {
         const { status } = await Audio.requestPermissionsAsync();
         if (status !== "granted") {
@@ -604,14 +652,76 @@ export default function ReadBook({ route, navigation }) {
           allowsRecordingIOS: true,
           playsInSilentModeIOS: true,
         });
-        const { recording } = await Audio.Recording.createAsync(
-          Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        );
+        const { recording } =
+          await Audio.Recording.createAsync(RECORDING_OPTIONS);
         recordingRef.current = recording;
         setMicActive(true);
+
+        // ── Auto-stop after 10 seconds ───────────────────
+        recordingTimerRef.current = setTimeout(async () => {
+          recordingTimerRef.current = null;
+          if (recordingRef.current) {
+            setMicActive(false);
+            await stopAndEvaluate();
+          }
+        }, 10000);
       } catch (error) {
         Alert.alert("Error", "Failed to start recording.");
       }
+    }
+  };
+
+  // ── Extracted so both manual and auto-stop share the same logic ──
+  const stopAndEvaluate = async () => {
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+
+      const result = await transcribeSentence(uri);
+
+      if (!result.success || !result.transcript) {
+        Alert.alert("Could not hear you", "Please try again.");
+        return;
+      }
+
+      const spokenWords = result.transcript.trim().split(/\s+/);
+      const newResults = alignWords(sentenceWords, spokenWords);
+
+      setWordResults((prev) => {
+        const next = prev.map((s) => [...s]);
+        next[currentSentence] = newResults;
+        return next;
+      });
+
+      if (sessionIdRef.current) {
+        const db = getFirestore();
+        updateDoc(doc(db, "readingSessions", sessionIdRef.current), {
+          recordingsAttempted: increment(1),
+        }).catch(() => {});
+      }
+
+      const allCorrect = newResults.every((r) => r === "correct");
+      if (allCorrect) {
+        // ── Accuracy-based points ──────────────────────────
+        // confidence is 0-1 from Google STT
+        // formula: floor(confidence * 5) → max 5 pts per sentence
+        const confidence = result.confidence ?? 1.0;
+        const pointsEarned = Math.max(1, Math.floor(confidence * 5));
+        awardPoints(currentSentence, pointsEarned);
+        showFeedback("correct");
+      } else {
+        const firstWrong = newResults.findIndex((r) => r === "wrong");
+        if (firstWrong !== -1) setActiveWordIndex(firstWrong);
+        showFeedback("wrong");
+      }
+    } catch (error) {
+      console.log("Mic evaluate error:", error);
+      Alert.alert("Error", "Could not evaluate. Please try again.");
+      setMicActive(false);
+      recordingRef.current = null;
     }
   };
 
@@ -638,11 +748,9 @@ export default function ReadBook({ route, navigation }) {
           </View>
         </View>
       </Modal>
-
       <TouchableOpacity style={s.backButton} onPress={handleBackPress}>
         <Ionicons name="arrow-back" size={scale(26)} color="#fff" />
       </TouchableOpacity>
-
       <View style={s.header}>
         <View style={s.headerText}>
           <Text style={s.headerTitle}>ELLA</Text>
@@ -681,16 +789,14 @@ export default function ReadBook({ route, navigation }) {
                 },
               ]}
             >
-              +10 ✦
+              +{showPointsPop} ✦
             </Animated.Text>
           )}
         </View>
       </View>
-
       <Text style={s.booktitle}>{book.title}</Text>
       <Text style={s.writer}>By {book.writer}</Text>
       <RNImage source={{ uri: book.cover }} style={s.coverImage} />
-
       <View style={s.readerBox}>
         <View style={s.wordsContainer}>
           {sentenceWords.map((word, index) => {
@@ -721,7 +827,7 @@ export default function ReadBook({ route, navigation }) {
           {currentSentence + 1} / {book.contents.length}
         </Text>
       </View>
-
+      // Replace controlRow with this — only nav and mic buttons remain
       <View style={s.controlRow}>
         <TouchableOpacity
           style={[s.navButton, currentSentence === 0 && s.disabled]}
@@ -743,22 +849,6 @@ export default function ReadBook({ route, navigation }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={s.correctButton}
-          onPress={handleMarkCorrect}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="checkmark" size={scale(24)} color="#fff" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={s.wrongButton}
-          onPress={handleMarkWrong}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="close" size={scale(24)} color="#fff" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={[s.navButton, !allWordsCorrect && s.disabled]}
           disabled={!allWordsCorrect}
           onPress={handleNext}
@@ -770,17 +860,14 @@ export default function ReadBook({ route, navigation }) {
           />
         </TouchableOpacity>
       </View>
-
       <Text style={s.hintText}>
         {allWordsCorrect
           ? "All words read! Tap → to continue"
           : `Word ${activeWordIndex + 1} / ${sentenceWords.length} — tap ✓ correct or ✗ wrong`}
       </Text>
-
       <Text style={[s.micText, micActive && { color: "#e05555" }]}>
         {micActive ? "Listening..." : "Speak"}
       </Text>
-
       <View style={s.avatarSection}>
         {feedback && (
           <Animated.View
@@ -997,24 +1084,6 @@ const getStyles = (scale, verticalScale) =>
       height: scale(44),
     },
     micButtonActive: { backgroundColor: "#e05555" },
-    correctButton: {
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "#4CAF50",
-      borderRadius: scale(22),
-      width: scale(44),
-      height: scale(44),
-      elevation: 3,
-    },
-    wrongButton: {
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "#E53935",
-      borderRadius: scale(22),
-      width: scale(44),
-      height: scale(44),
-      elevation: 3,
-    },
     hintText: {
       fontFamily: "Poppins",
       fontSize: scale(11),

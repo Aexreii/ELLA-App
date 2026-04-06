@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import EnrollModal from "../Screen/EnrollModal";
 
 export default function Sidebar({
@@ -24,10 +24,6 @@ export default function Sidebar({
   const [enrollModalVisible, setEnrollModalVisible] = useState(false);
 
   const isTeacher = currUser?.role === "Teacher";
-
-  // ── FIX: The DB field is classEnrolled (a single string), NOT enrolledClasses
-  // (an array). Checking enrolledClasses always returned [] → isEnrolled was
-  // always false → badge never showed and Enroll button never changed to View Class.
   const isEnrolled = !!currUser?.classEnrolled;
 
   // ── Navigate to User Profile ──────────────────────────────
@@ -45,8 +41,7 @@ export default function Sidebar({
   // ── Student: View Class ───────────────────────────────────
   const handleViewClass = () => {
     handleMenuPress();
-    // Navigate to class screen — classEnrolled holds the classId
-    navigation.navigate("TeacherBooks"); // reuse or replace with a StudentClassScreen
+    navigation.navigate("TeacherBooks");
     console.log("View class pressed — classEnrolled:", currUser?.classEnrolled);
   };
 
@@ -54,6 +49,12 @@ export default function Sidebar({
   const handleEnroll = () => {
     handleMenuPress();
     setEnrollModalVisible(true);
+  };
+
+  // ── Student: Upload Book ──────────────────────────────────
+  const handleUploadBook = () => {
+    handleMenuPress();
+    navigation.navigate("UploadBook");
   };
 
   return (
@@ -100,7 +101,13 @@ export default function Sidebar({
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>{currUser.name}</Text>
                 <Text style={styles.userRole}>{currUser.role}</Text>
-                {/* ── FIX: badge now shows correctly when classEnrolled is set ── */}
+                {isTeacher && (
+                  <View style={styles.enrolledBadge}>
+                    <Text style={styles.enrolledBadgeText}>
+                      Class Code: {currUser.ownedClassId}
+                    </Text>
+                  </View>
+                )}
                 {isEnrolled && !isTeacher && (
                   <View style={styles.enrolledBadge}>
                     <Ionicons
@@ -154,6 +161,17 @@ export default function Sidebar({
               >
                 <Ionicons name="add-circle-outline" size={24} color="#333" />
                 <Text style={styles.menuButtonText}>Enroll to class</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* ── Student only: Upload Book ── */}
+            {!isTeacher && (
+              <TouchableOpacity
+                style={styles.menuButton}
+                onPress={handleUploadBook}
+              >
+                <Ionicons name="cloud-upload-outline" size={24} color="#333" />
+                <Text style={styles.menuButtonText}>Upload Book</Text>
               </TouchableOpacity>
             )}
 
@@ -293,7 +311,7 @@ const styles = StyleSheet.create({
   },
   enrolledBadgeText: {
     fontFamily: "Poppins",
-    fontSize: 11,
+    fontSize: 14,
     color: "#FF9149",
   },
   menuButton: {
