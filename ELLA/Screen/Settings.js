@@ -6,11 +6,18 @@ import { useScale } from "../utils/scaling";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMusic } from "../hook/MusicContext";
 import CustomSlider from "../components/CustomSlider";
+import { pronounceWord } from "../utils/speechHelper";
+import { Audio } from "expo-av";
 
 // ---------------------------------------------------------------------------
 // Settings Screen
 // ---------------------------------------------------------------------------
-const TEXT_SIZES = ["Small", "Medium", "Large"];
+const VOICES = [
+  { name: "en-US-Neural2-F", label: "Aria", gender: "Female", icon: "👩" },
+  { name: "en-US-Neural2-C", label: "Clara", gender: "Female", icon: "👧" },
+  { name: "en-US-Neural2-A", label: "Adam", gender: "Male", icon: "👦" },
+  { name: "en-US-Neural2-D", label: "Dylan", gender: "Male", icon: "👨" },
+];
 
 export default function Settings() {
   const navigation = useNavigation();
@@ -18,7 +25,8 @@ export default function Settings() {
   const insets = useSafeAreaInsets();
 
   // Pull everything from context — no local duplicates for audio values
-  const { setVolume, soundVolume, setSoundVolume } = useMusic();
+  const { setVolume, soundVolume, setSoundVolume, ttsVoice, setTtsVoice } =
+    useMusic();
 
   // Local state only for UI-only settings (not persisted in context)
   const [musicVolume, setMusicVolume] = React.useState(0.4);
@@ -27,6 +35,24 @@ export default function Settings() {
 
   const musicDebounce = useRef(null);
   const soundDebounce = useRef(null);
+
+  const handleVoicePreview = async (voiceName) => {
+    setTtsVoice(voiceName);
+    try {
+      const result = await pronounceWord("I love Reading Books!", voiceName);
+      if (result?.audio) {
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: `data:audio/mp3;base64,${result.audio}` },
+          { shouldPlay: true, volume: soundVolume ?? 0.8 },
+        );
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.didJustFinish) sound.unloadAsync();
+        });
+      }
+    } catch (e) {
+      console.log("[TTS preview] error:", e);
+    }
+  };
 
   // Music slider — debounced so dragging doesn't spam setVolumeAsync
   const handleMusicChange = useCallback(
@@ -89,29 +115,28 @@ export default function Settings() {
 
         {/* Text Size Section */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Text Size</Text>
-          <View style={s.textSizeRow}>
-            {TEXT_SIZES.map((size) => (
+          <Text style={s.sectionTitle}>Reader Voice</Text>
+          <View style={s.voiceGrid}>
+            {VOICES.map((v) => (
               <TouchableOpacity
-                key={size}
+                key={v.name}
                 style={[
-                  s.textSizeButton,
-                  textSize === size && s.textSizeButtonActive,
+                  s.voiceButton,
+                  ttsVoice === v.name && s.voiceButtonActive,
                 ]}
-                onPress={() => setTextSize(size)}
+                onPress={() => handleVoicePreview(v.name)}
                 activeOpacity={0.8}
               >
+                <Text style={s.voiceIcon}>{v.icon}</Text>
                 <Text
                   style={[
-                    s.textSizeLabel,
-                    textSize === size && s.textSizeLabelActive,
-                    size === "Small" && { fontSize: scale(11) },
-                    size === "Medium" && { fontSize: scale(14) },
-                    size === "Large" && { fontSize: scale(18) },
+                    s.voiceLabel,
+                    ttsVoice === v.name && s.voiceLabelActive,
                   ]}
                 >
-                  {size}
+                  {v.label}
                 </Text>
+                <Text style={s.voiceGender}>{v.gender}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -197,27 +222,41 @@ const getStyles = (scale, verticalScale) =>
       backgroundColor: "#ddd",
       marginVertical: verticalScale(16),
     },
-    textSizeRow: {
+    voiceGrid: {
       flexDirection: "row",
-      gap: scale(12),
+      flexWrap: "wrap",
+      gap: scale(10),
     },
-    textSizeButton: {
-      paddingVertical: verticalScale(10),
-      paddingHorizontal: scale(20),
-      borderRadius: scale(30),
-      backgroundColor: "#FF9149",
+    voiceButton: {
+      width: scale(75),
+      paddingVertical: verticalScale(12),
+      paddingHorizontal: scale(10),
+      borderRadius: scale(16),
+      backgroundColor: "#fff",
       alignItems: "center",
-      justifyContent: "center",
-      opacity: 0.45,
+      borderWidth: 2,
+      borderColor: "#e0e0e0",
     },
-    textSizeButtonActive: {
-      opacity: 1,
+    voiceButtonActive: {
+      borderColor: "#FF9149",
+      backgroundColor: "#FFF4EE",
     },
-    textSizeLabel: {
-      fontFamily: "Poppins",
-      color: "#fff",
+    voiceIcon: {
+      fontSize: scale(24),
+      marginBottom: verticalScale(4),
     },
-    textSizeLabelActive: {
+    voiceLabel: {
       fontFamily: "PoppinsBold",
+      fontSize: scale(13),
+      color: "#333",
+    },
+    voiceLabelActive: {
+      color: "#FF9149",
+    },
+    voiceGender: {
+      fontFamily: "Poppins",
+      fontSize: scale(10),
+      color: "#aaa",
+      marginTop: verticalScale(2),
     },
   });

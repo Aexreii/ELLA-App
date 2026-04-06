@@ -12,7 +12,8 @@ const MusicContext = createContext(null);
 export function MusicProvider({ children }) {
   const soundRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [soundVolume, setSoundVolume] = useState(0.8); // shared SFX volume
+  const [soundVolume, setSoundVolume] = useState(0.8);
+  const [ttsVoice, setTtsVoice] = useState("en-US-Neural2-F"); // ← moved inside
 
   useEffect(() => {
     loadMusic();
@@ -97,8 +98,10 @@ export function MusicProvider({ children }) {
         resumeMusic,
         toggleMusic,
         setVolume,
-        soundVolume, // current SFX volume (0–1)
-        setSoundVolume, // call this from Settings slider
+        soundVolume,
+        setSoundVolume,
+        ttsVoice,
+        setTtsVoice,
       }}
     >
       {children}

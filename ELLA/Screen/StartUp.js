@@ -143,8 +143,15 @@ export default function StartUp({ navigation }) {
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
-      await GoogleSignin.hasPlayServices();
+
+      setIsSubmitting(true);
+      console.log("[Google] Step 1: checking play services");
+      await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
+      });
+      console.log("[Google] Step 2: signing in");
       await GoogleSignin.signIn();
+      console.log("[Google] Step 3: getting tokens");
       const { idToken } = await GoogleSignin.getTokens();
       const credential = GoogleAuthProvider.credential(idToken);
       const userCredential = await signInWithCredential(auth, credential);

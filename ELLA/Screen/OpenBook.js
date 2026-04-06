@@ -14,7 +14,7 @@ import { Image as RNImage } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useScale } from "../utils/scaling";
-import { getFirestore, doc, updateDoc } from "firebase/firestore";
+import { getFirestore, doc, updateDoc, deleteDoc } from "firebase/firestore";
 
 export default function OpenBook({ route, navigation }) {
   const { book: initialBook, currUser } = route.params;
@@ -23,7 +23,6 @@ export default function OpenBook({ route, navigation }) {
 
   // Keep a local copy so edits reflect immediately after save
   const [book, setBook] = useState(initialBook);
-  const isTeacher = currUser?.role === "Teacher";
 
   // ── Edit modal state ──────────────────────────────────────
   const [editVisible, setEditVisible] = useState(false);
@@ -34,6 +33,7 @@ export default function OpenBook({ route, navigation }) {
     publisher: book.publisher ?? "",
     difficulty: book.difficulty ?? "",
     cover: book.cover ?? "",
+    contents: book.contents ? book.contents.join("\n") : "", // ← each sentence on its own line
   });
 
   const handleStartReading = () =>
@@ -46,29 +46,40 @@ export default function OpenBook({ route, navigation }) {
       publisher: book.publisher ?? "",
       difficulty: book.difficulty ?? "",
       cover: book.cover ?? "",
+      contents: book.contents ? book.contents.join("\n") : "",
     });
     setEditVisible(true);
   };
 
   const handleSaveEdit = async () => {
-    // Basic validation
     if (!editFields.title.trim()) {
       Alert.alert("Validation", "Title cannot be empty.");
+      return;
+    }
+    if (!editFields.contents.trim()) {
+      Alert.alert("Validation", "Contents cannot be empty.");
       return;
     }
     setIsSaving(true);
     try {
       const db = getFirestore();
       const bookRef = doc(db, "books", book.id);
+
+      // Split by newline, trim each line, remove empty lines
+      const contentsArray = editFields.contents
+        .split("\n")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
       const updates = {
         title: editFields.title.trim(),
         writer: editFields.writer.trim(),
         publisher: editFields.publisher.trim(),
         difficulty: editFields.difficulty.trim(),
         cover: editFields.cover.trim(),
+        contents: contentsArray,
       };
       await updateDoc(bookRef, updates);
-      // Reflect changes locally so the screen updates without re-fetching
       setBook((prev) => ({ ...prev, ...updates }));
       setEditVisible(false);
       Alert.alert("Saved", "Book details updated successfully.");
@@ -78,6 +89,31 @@ export default function OpenBook({ route, navigation }) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Book",
+      "Are you sure you want to delete this book? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const db = getFirestore();
+              await deleteDoc(doc(db, "books", book.id));
+              Alert.alert("Deleted", "Book has been deleted.");
+              navigation.navigate("HomeScreen");
+            } catch (error) {
+              console.log("Delete book error:", error);
+              Alert.alert("Error", "Failed to delete book. Please try again.");
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -138,17 +174,26 @@ export default function OpenBook({ route, navigation }) {
       </View>
 
       {/* ── Action buttons row ── */}
+      {/* ── Action buttons row ── */}
       <View style={s.buttonRow}>
         <TouchableOpacity style={s.button} onPress={handleStartReading}>
           <Text style={s.buttonText}>Start Reading</Text>
         </TouchableOpacity>
+      </View>
 
-        {/* Edit button — teachers only */}
-        {isTeacher && (
-          <TouchableOpacity style={s.editButton} onPress={handleOpenEdit}>
-            <Ionicons name="pencil" size={scale(18)} color="#fff" />
-            <Text style={s.editButtonText}>Edit</Text>
-          </TouchableOpacity>
+      <View style={s.buttonRow}>
+        {book.uploadedById === currUser?.uid && (
+          <>
+            <TouchableOpacity style={s.editButton} onPress={handleOpenEdit}>
+              <Ionicons name="pencil" size={scale(18)} color="#fff" />
+              <Text style={s.editButtonText}>Edit</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={s.deleteButton} onPress={handleDelete}>
+              <Ionicons name="trash-outline" size={scale(18)} color="#fff" />
+              <Text style={s.deleteButtonText}>Delete</Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
 
@@ -173,13 +218,17 @@ export default function OpenBook({ route, navigation }) {
                 { key: "publisher", label: "Publisher" },
                 { key: "difficulty", label: "Difficulty" },
                 { key: "cover", label: "Cover URL" },
+                { key: "contents", label: "Contents (one sentence per line)" },
               ].map(({ key, label }) => (
                 <View key={key} style={s.inputGroup}>
                   <Text style={s.inputLabel}>{label}</Text>
                   <TextInput
                     style={[
                       s.input,
-                      key === "cover" && { height: verticalScale(60) },
+                      (key === "cover" || key === "contents") && {
+                        height: verticalScale(key === "contents" ? 100 : 60),
+                        textAlignVertical: "top", // ← text starts at top on Android
+                      },
                     ]}
                     value={editFields[key]}
                     onChangeText={(val) =>
@@ -187,7 +236,7 @@ export default function OpenBook({ route, navigation }) {
                     }
                     placeholder={`Enter ${label.toLowerCase()}`}
                     placeholderTextColor="#aaa"
-                    multiline={key === "cover"}
+                    multiline={key === "cover" || key === "contents"}
                     autoCapitalize={key === "cover" ? "none" : "sentences"}
                   />
                 </View>
@@ -314,8 +363,28 @@ const getStyles = (scale, verticalScale) =>
     buttonRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: scale(12),
+      flexWrap: "wrap", // ← wrap if buttons overflow
+      justifyContent: "center",
+      gap: scale(10),
       marginTop: verticalScale(50),
+      paddingHorizontal: scale(16),
+    },
+    deleteButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#E53935",
+      height: verticalScale(30),
+      paddingHorizontal: scale(16),
+      borderRadius: scale(8),
+      borderColor: "#000",
+      borderWidth: 1.5,
+      gap: scale(6),
+    },
+    deleteButtonText: {
+      color: "#fff",
+      fontSize: scale(14),
+      fontFamily: "PoppinsBold",
     },
     button: {
       width: scale(140),
@@ -337,7 +406,7 @@ const getStyles = (scale, verticalScale) =>
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: "#60B5FF",
-      height: verticalScale(40),
+      height: verticalScale(30),
       paddingHorizontal: scale(16),
       borderRadius: scale(8),
       borderColor: "#000",

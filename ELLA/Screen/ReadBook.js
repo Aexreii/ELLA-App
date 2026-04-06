@@ -33,6 +33,7 @@ import {
   BACKEND_URL,
   RECORDING_OPTIONS,
   transcribeSentence,
+  pronounceWord,
 } from "../utils/speechHelper";
 
 // ─────────────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ function unflattenWordResults(flat, book) {
 
 export default function ReadBook({ route, navigation }) {
   const { book, currUser } = route.params;
-  const { pauseMusic, resumeMusic, soundVolume } = useMusic();
+  const { pauseMusic, resumeMusic, soundVolume, ttsVoice } = useMusic();
   const { scale, verticalScale } = useScale();
 
   const [currentSentence, setCurrentSentence] = useState(0);
@@ -179,8 +180,11 @@ export default function ReadBook({ route, navigation }) {
 
   const sentenceWords = book.contents[currentSentence].split(" ");
   const currentWordResults = wordResults[currentSentence];
-  const allWordsCorrect = currentWordResults.every((r) => r === "correct");
+  const allWordsCorrect = currentWordResults.every(
+    (r) => r === "correct" || r === "wrong",
+  );
   const isLastSentence = currentSentence === book.contents.length - 1;
+  const [isEvaluating, setIsEvaluating] = useState(false);
 
   const characterImages = {
     pink: require("../assets/animations/jump_pink.gif"),
@@ -576,15 +580,35 @@ export default function ReadBook({ route, navigation }) {
   // ─────────────────────────────────────────────────────────
   // 7. Tap a word → highlight orange briefly
   // ─────────────────────────────────────────────────────────
-  const handleWordPress = (index) => {
+  const handleWordPress = async (index) => {
     if (wordResults[currentSentence][index] === "correct") return;
 
+    // Flash orange
     setWordResults((prev) => {
       const next = prev.map((s) => [...s]);
       next[currentSentence][index] = "orange";
       return next;
     });
 
+    // Pronounce the word
+    try {
+      const word = sentenceWords[index];
+      const result = await pronounceWord(word, ttsVoice);
+
+      if (result?.audio) {
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: `data:audio/mp3;base64,${result.audio}` },
+          { shouldPlay: true, volume: soundVolume ?? 0.8 },
+        );
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.didJustFinish) sound.unloadAsync();
+        });
+      }
+    } catch (e) {
+      console.log("[TTS] error:", e);
+    }
+
+    // Reset orange after 800ms
     setTimeout(() => {
       setWordResults((prev) => {
         const next = prev.map((s) => [...s]);
@@ -664,7 +688,7 @@ export default function ReadBook({ route, navigation }) {
             setMicActive(false);
             await stopAndEvaluate();
           }
-        }, 10000);
+        }, 9000);
       } catch (error) {
         Alert.alert("Error", "Failed to start recording.");
       }
@@ -673,6 +697,7 @@ export default function ReadBook({ route, navigation }) {
 
   // ── Extracted so both manual and auto-stop share the same logic ──
   const stopAndEvaluate = async () => {
+    setIsEvaluating(true);
     try {
       await recordingRef.current.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
@@ -680,7 +705,13 @@ export default function ReadBook({ route, navigation }) {
       const uri = recordingRef.current.getURI();
       recordingRef.current = null;
 
-      const result = await transcribeSentence(uri);
+      // Only send words that aren't already correct
+      const currentResults = wordResultsRef.current[currentSentence];
+      const remainingWords = sentenceWords.filter(
+        (_, i) => currentResults[i] !== "correct",
+      );
+
+      const result = await transcribeSentence(uri, remainingWords);
 
       if (!result.success || !result.transcript) {
         Alert.alert("Could not hear you", "Please try again.");
@@ -688,11 +719,18 @@ export default function ReadBook({ route, navigation }) {
       }
 
       const spokenWords = result.transcript.trim().split(/\s+/);
-      const newResults = alignWords(sentenceWords, spokenWords);
+      const remainingResults = alignWords(remainingWords, spokenWords);
+
+      // Merge back — correct words stay correct, others get new result
+      let remainingIndex = 0;
+      const mergedResults = currentResults.map((existing) => {
+        if (existing === "correct") return "correct"; // ← never overwrite green
+        return remainingResults[remainingIndex++] ?? "wrong";
+      });
 
       setWordResults((prev) => {
         const next = prev.map((s) => [...s]);
-        next[currentSentence] = newResults;
+        next[currentSentence] = mergedResults;
         return next;
       });
 
@@ -703,17 +741,14 @@ export default function ReadBook({ route, navigation }) {
         }).catch(() => {});
       }
 
-      const allCorrect = newResults.every((r) => r === "correct");
+      const allCorrect = mergedResults.every((r) => r === "correct");
       if (allCorrect) {
-        // ── Accuracy-based points ──────────────────────────
-        // confidence is 0-1 from Google STT
-        // formula: floor(confidence * 5) → max 5 pts per sentence
         const confidence = result.confidence ?? 1.0;
         const pointsEarned = Math.max(1, Math.floor(confidence * 5));
         awardPoints(currentSentence, pointsEarned);
         showFeedback("correct");
       } else {
-        const firstWrong = newResults.findIndex((r) => r === "wrong");
+        const firstWrong = mergedResults.findIndex((r) => r === "wrong");
         if (firstWrong !== -1) setActiveWordIndex(firstWrong);
         showFeedback("wrong");
       }
@@ -722,6 +757,8 @@ export default function ReadBook({ route, navigation }) {
       Alert.alert("Error", "Could not evaluate. Please try again.");
       setMicActive(false);
       recordingRef.current = null;
+    } finally {
+      setIsEvaluating(false); // ← re-enable mic after evaluation
     }
   };
 
@@ -789,7 +826,7 @@ export default function ReadBook({ route, navigation }) {
                 },
               ]}
             >
-              +{showPointsPop} ✦
+              {`+${showPointsPop} ✦`}
             </Animated.Text>
           )}
         </View>
@@ -827,25 +864,32 @@ export default function ReadBook({ route, navigation }) {
           {currentSentence + 1} / {book.contents.length}
         </Text>
       </View>
-      // Replace controlRow with this — only nav and mic buttons remain
       <View style={s.controlRow}>
         <TouchableOpacity
           style={[s.navButton, currentSentence === 0 && s.disabled]}
           disabled={currentSentence === 0}
           onPress={handlePrev}
         >
-          <Ionicons name="arrow-back-circle" size={scale(42)} color="#555" />
+          <Ionicons name="arrow-back-circle" size={scale(48)} color="#555" />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[s.micButton, micActive && s.micButtonActive]}
+          style={[
+            s.micButton,
+            micActive && s.micButtonActive,
+            isEvaluating && s.micButtonDisabled, // ← gray out while evaluating
+          ]}
           onPress={handleMicPress}
         >
-          <Ionicons
-            name={micActive ? "stop-circle-outline" : "mic-outline"}
-            size={scale(24)}
-            color="#fff"
-          />
+          {isEvaluating ? (
+            <ActivityIndicator size="small" color="#fff" /> // ← show spinner
+          ) : (
+            <Ionicons
+              name={micActive ? "stop-circle-outline" : "mic-outline"}
+              size={scale(48)}
+              color="#fff"
+            />
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -855,18 +899,18 @@ export default function ReadBook({ route, navigation }) {
         >
           <Ionicons
             name={isLastSentence ? "checkmark-circle" : "arrow-forward-circle"}
-            size={scale(42)}
+            size={scale(48)}
             color={allWordsCorrect ? "#FF9149" : "#ccc"}
           />
         </TouchableOpacity>
       </View>
+      <Text style={[s.micText, micActive && { color: "#e05555" }]}>
+        {micActive ? "Listening..." : "Speak"}
+      </Text>{" "}
       <Text style={s.hintText}>
         {allWordsCorrect
           ? "All words read! Tap → to continue"
-          : `Word ${activeWordIndex + 1} / ${sentenceWords.length} — tap ✓ correct or ✗ wrong`}
-      </Text>
-      <Text style={[s.micText, micActive && { color: "#e05555" }]}>
-        {micActive ? "Listening..." : "Speak"}
+          : `Tap a word to hear it pronounced`}
       </Text>
       <View style={s.avatarSection}>
         {feedback && (
@@ -1073,28 +1117,22 @@ const getStyles = (scale, verticalScale) =>
       marginTop: verticalScale(10),
       width: "90%",
     },
-    navButton: { padding: scale(4) },
+    navButton: { padding: scale(4), margin: 12 },
     disabled: { opacity: 0.28 },
     micButton: {
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: "#60B5FF",
-      borderRadius: scale(22),
-      width: scale(44),
-      height: scale(44),
+      borderRadius: scale(50),
+      width: scale(60),
+      height: scale(60),
+      margin: 10,
     },
     micButtonActive: { backgroundColor: "#e05555" },
-    hintText: {
-      fontFamily: "Poppins",
-      fontSize: scale(11),
-      color: "#aaa",
-      marginTop: verticalScale(4),
-      fontStyle: "italic",
-      textAlign: "center",
-    },
+    micButtonDisabled: { backgroundColor: "#aaa" },
     micText: {
       color: "#aaa",
-      fontSize: scale(11),
+      fontSize: scale(16),
       fontFamily: "Poppins",
       marginTop: scale(2),
     },
@@ -1113,6 +1151,14 @@ const getStyles = (scale, verticalScale) =>
       paddingHorizontal: scale(12),
       paddingVertical: verticalScale(7),
       maxWidth: scale(150),
+    },
+    hintText: {
+      fontFamily: "Poppins",
+      fontSize: scale(16),
+      color: "#aaa",
+      marginTop: verticalScale(4),
+      fontStyle: "italic",
+      textAlign: "center",
     },
     bubbleCorrect: { backgroundColor: "#4CAF50" },
     bubbleWrong: { backgroundColor: "#E53935" },
