@@ -151,7 +151,10 @@ export default function ManageClass() {
                 <View style={s.avatarWrap}>
                   <Image
                     source={
-                      characterImages[student.character] ?? characterImages.pink
+                      student.character === "custom" && student.customAvatarUrl
+                        ? { uri: student.customAvatarUrl } // Use the dynamic link
+                        : (characterAssets[student.character] ??
+                          characterAssets.pink) // Fallback to local asset
                     }
                     style={s.avatar}
                     contentFit="cover"
