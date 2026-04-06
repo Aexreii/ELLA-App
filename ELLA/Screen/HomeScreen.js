@@ -17,7 +17,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { ImageBackground } from "react-native";
 import Sidebar from "../components/Sidebar";
 import AppHeader from "../components/AppHeader";
-import { getLastUnfinishedBook, getRecommendedBooks } from "../libUtil";
+import { getLastUnfinishedBook, getRecommendedBooks } from "../utils/libUtil";
 import { useScale } from "../utils/scaling";
 import { auth } from "../firebase";
 import {
@@ -75,6 +75,8 @@ export default function HomeScreen() {
   const myStudentUploads = studentUploads.filter(
     (b) => b.uploadedById === currUser?.uid,
   );
+
+  const studentBooks = studentUploads;
 
   const enrolledTeacherBooks =
     isEnrolled && classTeacherId
@@ -408,8 +410,9 @@ export default function HomeScreen() {
                 ...(isEnrolled && enrolledTeacherBooks.length > 0
                   ? [{ label: "Teacher Materials", data: enrolledTeacherBooks }]
                   : []),
-                { label: "Student Uploads", data: myStudentUploads },
+                { label: "Student Uploads", data: studentBooks },
                 { label: "Books from Ella", data: ellaBooks },
+                { label: "My Uploads", data: myStudentUploads },
               ]
                 .filter(({ data }) => data && data.length > 0)
                 .map(({ label, data }) => (

@@ -12,12 +12,15 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { auth } from "../firebase";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { getFirestore, doc, setDoc } from "firebase/firestore";
+import {
+  signInWithCredential,
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+} from "firebase/auth";
+import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
 import {
   GoogleSignin,
-  isSuccessResponse,
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
@@ -84,34 +87,70 @@ export default function SignUp() {
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
-      await GoogleSignin.hasPlayServices();
-      const response = await GoogleSignin.signIn();
-      if (isSuccessResponse(response)) {
-        navigation.navigate("HomeScreen");
-      } else {
-        Alert.alert(
-          "Login Failed",
-          "Your Google sign-in was unsuccessful. Please try again.",
-          [{ text: "OK" }],
-          { cancelable: true },
-        );
+      const currentUser = await GoogleSignin.getCurrentUser();
+      console.log("[Google] currentUser:", JSON.stringify(currentUser));
+
+      const isSignedIn = await GoogleSignin.isSignedIn();
+      console.log("[Google] isSignedIn:", isSignedIn);
+      // ── DEBUG: check Play Services ──
+      await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
+      });
+      console.log("[Google] Play Services OK");
+
+      await GoogleSignin.signIn();
+      console.log("[Google] signIn OK");
+
+      const { idToken } = await GoogleSignin.getTokens();
+      console.log("[Google] idToken exists:", !!idToken);
+      console.log("[Google] idToken prefix:", idToken?.slice(0, 20));
+
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+      const user = userCredential.user;
+
+      const db = getFirestore();
+      const userRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(userRef);
+
+      if (!docSnap.exists()) {
+        await setDoc(userRef, {
+          name: null,
+          age: null,
+          role: null,
+          points: 0,
+          character: "pink",
+          email: user.email,
+          progress: [],
+          ownedStickers: [],
+          createdAt: new Date(),
+          provider: "google",
+          id: user.uid,
+        });
       }
-      setIsSubmitting(false);
+
+      const updatedDoc = await getDoc(userRef);
+      const userData = updatedDoc.data();
+
+      if (!userData.role) navigation.replace("RoleSelect");
+      else if (!userData.name || !userData.age) navigation.replace("NameEntry");
+      else navigation.replace("HomeScreen");
     } catch (error) {
       if (isErrorWithCode(error)) {
         switch (error.code) {
           case statusCodes.IN_PROGRESS:
-            Alert.alert("Your Google sign-in is in progress");
+            Alert.alert("Google sign-in already in progress.");
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
-            Alert.alert("Play services not available");
+            Alert.alert("Google Play Services not available.");
             break;
           default:
-            Alert.alert(error.code);
+            Alert.alert("Login Error", error.message);
         }
       } else {
-        Alert.alert("You fucked up!");
+        Alert.alert("Unexpected Error", error.message);
       }
+    } finally {
       setIsSubmitting(false);
     }
   };

@@ -2,6 +2,11 @@
 ELLA (English Literacy Learning App) - Backend API
 Main Flask application entry point
 """
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -12,11 +17,6 @@ from routes.speech_routes import speech_bp
 from routes.books_routes import books_bp
 from routes.reading_routes import reading_bp
 from routes.prizes_routes import prizes_bp
-import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)

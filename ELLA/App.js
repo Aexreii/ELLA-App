@@ -29,13 +29,13 @@ const Stack = createNativeStackNavigator();
 export default function App() {
   const { user, profile, loading } = useAuth();
 
+  // At the top of App.js useEffect
   useEffect(() => {
-    GoogleSignin.configure({
-      webClientId:
-        "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com",
-    });
-  });
-
+    const webClientId =
+      "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com";
+    console.log("[Google] Configuring with webClientId:", webClientId);
+    GoogleSignin.configure({ webClientId });
+  }, []);
   return (
     <MusicProvider>
       <SafeAreaProvider>

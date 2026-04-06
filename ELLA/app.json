@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icons/logo.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/icons/logo.png",
       "resizeMode": "contain",
@@ -35,7 +35,8 @@
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-firebase/crashlytics",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "eas": {
