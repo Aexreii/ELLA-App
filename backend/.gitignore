@@ -29,3 +29,6 @@ Thumbs.db
 test_audio/
 *.wav
 *.mp3
+
+ella-firebase-cred.json
+gcloud-cred.json

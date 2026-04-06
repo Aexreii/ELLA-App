@@ -105,6 +105,7 @@ export default function OpenBook({ route, navigation }) {
               const db = getFirestore();
               await deleteDoc(doc(db, "books", book.id));
               Alert.alert("Deleted", "Book has been deleted.");
+              resumeMusic();
               navigation.navigate("HomeScreen");
             } catch (error) {
               console.log("Delete book error:", error);

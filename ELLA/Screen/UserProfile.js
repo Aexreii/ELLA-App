@@ -7,11 +7,13 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
 import { auth } from "../firebase";
 import { signOut } from "firebase/auth";
 import {
@@ -26,6 +28,10 @@ import {
   arrayRemove,
 } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
+
+// ── Cloudinary config ──────────────────────────────────────
+const CLOUDINARY_CLOUD_NAME = "dygbbqapd";
+const CLOUDINARY_UPLOAD_PRESET = "ella_books";
 
 // ── Helpers ────────────────────────────────────────────────
 function getReadingLevel(sessions) {
@@ -48,6 +54,25 @@ function formatTime(seconds) {
   if (h > 0) return `${h}hr${h > 1 ? "s" : ""} ${m}mins`;
   return `${m} min${m !== 1 ? "s" : ""}`;
 }
+
+// ── Built-in avatar options ────────────────────────────────
+const BUILTIN_AVATARS = [
+  {
+    key: "pink",
+    label: "Pink",
+    source: require("../assets/animations/jump_pink.gif"),
+  },
+  {
+    key: "dino",
+    label: "Dino",
+    source: require("../assets/animations/jump_dino.gif"),
+  },
+  {
+    key: "owl",
+    label: "Owl",
+    source: require("../assets/animations/jump_owl.gif"),
+  },
+];
 
 export default function UserProfile() {
   const navigation = useNavigation();
@@ -74,6 +99,17 @@ export default function UserProfile() {
   const [loading, setLoading] = useState(true);
   const [uploadedBooks, setUploadedBooks] = useState([]);
 
+  // ── Avatar state ───────────────────────────────────────
+  const [customAvatarUrl, setCustomAvatarUrl] = useState(
+    currUser?.customAvatarUrl ?? null,
+  );
+  const [selectedCharacter, setSelectedCharacter] = useState(
+    currUser?.character ?? "pink",
+  );
+  const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [imageSourceModalVisible, setImageSourceModalVisible] = useState(false);
+
   useEffect(() => {
     fetchStats();
   }, []);
@@ -84,7 +120,6 @@ export default function UserProfile() {
       const uid = currUser?.uid ?? currUser?.id;
       if (!uid) return;
 
-      // ── Book progress ─────────────────────────────────────
       const progressSnap = await getDocs(
         query(collection(db, "userProgress"), where("userId", "==", uid)),
       );
@@ -99,7 +134,6 @@ export default function UserProfile() {
         0,
       );
 
-      // ── Completed book details ────────────────────────────
       const completedProgressDocs = progressDocs.filter(
         (p) => p.completed && p.bookId,
       );
@@ -116,18 +150,23 @@ export default function UserProfile() {
         setCompletedBooks(bookDocs.filter(Boolean));
       }
 
-      // ── Reading sessions (for level calc) ─────────────────
       const sessionsSnap = await getDocs(
         query(collection(db, "readingSessions"), where("userId", "==", uid)),
       );
       const sessionDocs = sessionsSnap.docs.map((d) => d.data());
 
-      // ── Stickers from user doc ─────────────────────────────
       const userSnap = await getDoc(doc(db, "users", uid));
       const userData = userSnap.data();
       const stickersUnlocked = userData?.ownedStickers?.length ?? 0;
 
-      // ── Enrolled class (students only) ────────────────────
+      // Sync latest avatar info from Firestore
+      if (userData?.customAvatarUrl !== undefined) {
+        setCustomAvatarUrl(userData.customAvatarUrl ?? null);
+      }
+      if (userData?.character) {
+        setSelectedCharacter(userData.character);
+      }
+
       if (!isTeacher) {
         const classIdFromUser = userData?.classEnrolled;
         if (classIdFromUser) {
@@ -144,7 +183,6 @@ export default function UserProfile() {
         }
       }
 
-      // ── Managed Classes (Teachers) ──
       let managedClassCount = 0;
       let booksUploaded = 0;
       let totalStudents = 0;
@@ -154,13 +192,10 @@ export default function UserProfile() {
           query(collection(db, "classes"), where("teacherID", "==", uid)),
         );
         managedClassCount = classesSnap.size;
-
-        // Count total students across all classes
         classesSnap.docs.forEach((d) => {
           totalStudents += d.data().students?.length ?? 0;
         });
 
-        // Count uploaded books
         const booksSnap = await getDocs(
           query(
             collection(db, "books"),
@@ -190,7 +225,118 @@ export default function UserProfile() {
     }
   };
 
-  // ── Unenroll (student removes themselves) ─────────────────
+  // ── Upload avatar to Cloudinary ────────────────────────
+  const uploadToCloudinary = async (uri) => {
+    const formData = new FormData();
+    formData.append("file", {
+      uri,
+      type: "image/jpeg",
+      name: `avatar_${Date.now()}.jpg`,
+    });
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    formData.append("cloud_name", CLOUDINARY_CLOUD_NAME);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+      { method: "POST", body: formData },
+    );
+    const data = await response.json();
+    if (!data.secure_url) throw new Error("Cloudinary upload failed");
+    return data.secure_url;
+  };
+
+  // ── Pick from gallery ──────────────────────────────────
+  const pickFromGallery = async () => {
+    setImageSourceModalVisible(false);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Please allow access to your photos.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      await handleUploadAvatar(result.assets[0].uri);
+    }
+  };
+
+  // ── Take photo ─────────────────────────────────────────
+  const pickFromCamera = async () => {
+    setImageSourceModalVisible(false);
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Please allow access to your camera.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      await handleUploadAvatar(result.assets[0].uri);
+    }
+  };
+
+  // ── Upload and save custom avatar ─────────────────────
+  const handleUploadAvatar = async (uri) => {
+    setAvatarModalVisible(false);
+    try {
+      setUploadingAvatar(true);
+      const url = await uploadToCloudinary(uri);
+      const db = getFirestore();
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+
+      await updateDoc(doc(db, "users", uid), {
+        customAvatarUrl: url,
+      });
+
+      setCustomAvatarUrl(url);
+      Alert.alert("Success!", "Your avatar has been updated.");
+    } catch (e) {
+      console.log("Avatar upload error:", e);
+      Alert.alert("Error", "Failed to upload avatar. Please try again.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  // ── Select a built-in avatar ───────────────────────────
+  const handleSelectBuiltinAvatar = async (key) => {
+    try {
+      setUploadingAvatar(true);
+      const db = getFirestore();
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+
+      await updateDoc(doc(db, "users", uid), {
+        character: key,
+        customAvatarUrl: null, // clear custom photo
+      });
+
+      setSelectedCharacter(key);
+      setCustomAvatarUrl(null);
+      setAvatarModalVisible(false);
+      Alert.alert("Avatar updated!", `You selected the ${key} character.`);
+    } catch (e) {
+      console.log("Select avatar error:", e);
+      Alert.alert("Error", "Failed to update avatar. Please try again.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  // ── Current avatar source ──────────────────────────────
+  const currentAvatarSource = customAvatarUrl
+    ? { uri: customAvatarUrl }
+    : (characterImages?.[selectedCharacter] ?? characterImages?.pink);
+
+  // ── Unenroll ───────────────────────────────────────────
   const handleUnenroll = () => {
     if (!enrolledClass) return;
     Alert.alert("Leave Class", "Are you sure you want to leave the class?", [
@@ -204,14 +350,12 @@ export default function UserProfile() {
             const db = getFirestore();
             const uid = auth.currentUser?.uid;
             if (!uid) return;
-
             await updateDoc(doc(db, "classes", enrolledClass.id), {
               students: arrayRemove(uid),
             });
             await updateDoc(doc(db, "users", uid), {
               classEnrolled: null,
             });
-
             setEnrolledClass(null);
             Alert.alert("Success", "You have successfully left the class.");
           } catch (err) {
@@ -228,7 +372,7 @@ export default function UserProfile() {
     ]);
   };
 
-  // ── Remove student (teacher removes a student) ────────────
+  // ── Remove student ─────────────────────────────────────
   const handleRemoveStudent = () => {
     Alert.alert(
       "Remove Student",
@@ -244,17 +388,12 @@ export default function UserProfile() {
               const db = getFirestore();
               const studentId = currUser?.id;
               if (!studentId || !classId) return;
-
-              // Remove student UID from class's students array
               await updateDoc(doc(db, "classes", classId), {
                 students: arrayRemove(studentId),
               });
-
-              // Clear the student's classEnrolled field
               await updateDoc(doc(db, "users", studentId), {
                 classEnrolled: null,
               });
-
               Alert.alert(
                 "Removed",
                 `${currUser?.name ?? "Student"} has been removed from the class.`,
@@ -275,7 +414,7 @@ export default function UserProfile() {
     );
   };
 
-  // ── Logout ─────────────────────────────────────────────────
+  // ── Logout ─────────────────────────────────────────────
   const handleLogout = async () => {
     Alert.alert("Log Out", "Are you sure you want to log out?", [
       { text: "Cancel", style: "cancel" },
@@ -328,21 +467,34 @@ export default function UserProfile() {
         {/* ── Avatar ── */}
         <View style={s.avatarContainer}>
           <View style={s.avatarRing}>
-            <Image
-              source={
-                characterImages[currUser?.character] ?? characterImages?.pink
-              }
-              style={s.avatar}
-              contentFit="cover"
-            />
+            {uploadingAvatar ? (
+              <ActivityIndicator color="#FF9149" size="large" />
+            ) : (
+              <Image
+                source={currentAvatarSource}
+                style={s.avatar}
+                contentFit="cover"
+              />
+            )}
           </View>
+
+          {/* Only own profile can change avatar */}
+          {isOwnProfile && (
+            <TouchableOpacity
+              style={s.changeAvatarBtn}
+              onPress={() => setAvatarModalVisible(true)}
+              disabled={uploadingAvatar}
+            >
+              <Ionicons name="camera" size={scale(14)} color="#fff" />
+              <Text style={s.changeAvatarText}>Change</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* ── Name & Role ── */}
         <Text style={s.name}>{currUser?.name}</Text>
         <Text style={s.role}>{currUser?.role}</Text>
 
-        {/* ── Class info card ── */}
         {/* ── Class info card ── */}
         <View style={s.classCard}>
           {isTeacher ? (
@@ -367,8 +519,6 @@ export default function UserProfile() {
                   {`Ms./Mr. ${enrolledClass.teacherName} (${enrolledClass.code})`}
                 </Text>
               </View>
-
-              {/* Student removes themselves */}
               {isOwnProfile && (
                 <TouchableOpacity
                   style={[s.removeButton, unenrolling && { opacity: 0.6 }]}
@@ -382,8 +532,6 @@ export default function UserProfile() {
                   )}
                 </TouchableOpacity>
               )}
-
-              {/* Teacher removes this student */}
               {isTeacherViewing && (
                 <TouchableOpacity
                   style={[s.removeButton, removing && { opacity: 0.6 }]}
@@ -399,7 +547,6 @@ export default function UserProfile() {
               )}
             </>
           ) : (
-            // Only show Not Enrolled if loading is finished AND there's no class
             <View style={s.classRow}>
               <Text style={s.classLabel}>Enrolled Class: </Text>
               <Text style={s.classValueMuted}>Not enrolled</Text>
@@ -407,12 +554,11 @@ export default function UserProfile() {
           )}
         </View>
 
-        {/* ── Reading Statistics ── */}
+        {/* ── Reading / Teaching Statistics ── */}
         <View style={s.statsCard}>
           <Text style={s.statsTitle}>
             {isTeacher ? "Teaching Statistics" : "Reading Statistics"}
           </Text>
-
           {loading ? (
             <ActivityIndicator
               color="#FF9149"
@@ -446,7 +592,7 @@ export default function UserProfile() {
                 s={s}
               />
               <StatRow
-                label="Number of Stickers Unlocked"
+                label="Stickers Unlocked"
                 value={String(stats?.stickersUnlocked ?? 0)}
                 s={s}
               />
@@ -460,8 +606,7 @@ export default function UserProfile() {
           )}
         </View>
 
-        {/* ── Completed Books ── */}
-        {/* ── Completed Books (students) / Uploaded Books (teachers) ── */}
+        {/* ── Completed / Uploaded Books ── */}
         {isTeacher ? (
           <View style={s.statsCard}>
             <Text style={s.statsTitle}>Uploaded Books</Text>
@@ -539,7 +684,7 @@ export default function UserProfile() {
         )}
       </ScrollView>
 
-      {/* ── Log Out — only for own profile ── */}
+      {/* ── Log Out ── */}
       {isOwnProfile && (
         <View
           style={[
@@ -568,6 +713,131 @@ export default function UserProfile() {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* ── Avatar Selection Modal ── */}
+      <Modal
+        visible={avatarModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAvatarModalVisible(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.avatarModalContainer}>
+            <Text style={s.avatarModalTitle}>Change Avatar</Text>
+
+            {/* Upload photo option */}
+            <TouchableOpacity
+              style={s.uploadPhotoBtn}
+              onPress={() => {
+                setAvatarModalVisible(false);
+                setImageSourceModalVisible(true);
+              }}
+            >
+              <Ionicons
+                name="camera-outline"
+                size={scale(22)}
+                color="#fff"
+                style={{ marginRight: scale(8) }}
+              />
+              <Text style={s.uploadPhotoBtnText}>Upload Your Photo</Text>
+            </TouchableOpacity>
+
+            <Text style={s.avatarOrText}>— or choose a character —</Text>
+
+            {/* Built-in avatar row */}
+            <View style={s.builtinAvatarRow}>
+              {BUILTIN_AVATARS.map((av) => {
+                const isSelected =
+                  !customAvatarUrl && selectedCharacter === av.key;
+                return (
+                  <TouchableOpacity
+                    key={av.key}
+                    style={[
+                      s.builtinAvatarOption,
+                      isSelected && s.builtinAvatarOptionSelected,
+                    ]}
+                    onPress={() => handleSelectBuiltinAvatar(av.key)}
+                  >
+                    <Image
+                      source={av.source}
+                      style={s.builtinAvatarImage}
+                      contentFit="contain"
+                    />
+                    <Text style={s.builtinAvatarLabel}>{av.label}</Text>
+                    {isSelected && (
+                      <View style={s.builtinAvatarCheck}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={scale(16)}
+                          color="#FF9149"
+                        />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={s.avatarModalCancel}
+              onPress={() => setAvatarModalVisible(false)}
+            >
+              <Text style={s.avatarModalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Image Source Modal (Camera / Gallery) ── */}
+      <Modal
+        visible={imageSourceModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImageSourceModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={s.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setImageSourceModalVisible(false)}
+        >
+          <View style={s.imageSourceContainer}>
+            <Text style={s.avatarModalTitle}>Upload From</Text>
+
+            <TouchableOpacity
+              style={s.imageSourceOption}
+              onPress={pickFromGallery}
+            >
+              <Ionicons
+                name="images-outline"
+                size={scale(24)}
+                color="#FF9149"
+              />
+              <Text style={s.imageSourceOptionText}>Photo Gallery</Text>
+            </TouchableOpacity>
+
+            <View style={s.imageSourceDivider} />
+
+            <TouchableOpacity
+              style={s.imageSourceOption}
+              onPress={pickFromCamera}
+            >
+              <Ionicons
+                name="camera-outline"
+                size={scale(24)}
+                color="#FF9149"
+              />
+              <Text style={s.imageSourceOptionText}>Camera</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.avatarModalCancel}
+              onPress={() => setImageSourceModalVisible(false)}
+            >
+              <Text style={s.avatarModalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -584,12 +854,8 @@ function StatRow({ label, value, s, last = false }) {
 
 const getStyles = (scale, verticalScale) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: "#f2f2f2",
-    },
+    container: { flex: 1, backgroundColor: "#f2f2f2" },
 
-    // ── Header ──
     header: {
       flexDirection: "row",
       alignItems: "center",
@@ -618,7 +884,6 @@ const getStyles = (scale, verticalScale) =>
       paddingBottom: verticalScale(20),
     },
 
-    // ── Role badge ──
     roleBadge: {
       fontFamily: "PixelifySans",
       fontSize: scale(16),
@@ -630,6 +895,7 @@ const getStyles = (scale, verticalScale) =>
 
     // ── Avatar ──
     avatarContainer: {
+      alignItems: "center",
       marginBottom: verticalScale(14),
     },
     avatarRing: {
@@ -646,14 +912,30 @@ const getStyles = (scale, verticalScale) =>
       shadowOpacity: 0.1,
       shadowRadius: 6,
       elevation: 4,
+      overflow: "hidden",
     },
     avatar: {
       width: scale(90),
       height: scale(90),
       borderRadius: scale(45),
     },
+    changeAvatarBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#FF9149",
+      borderRadius: scale(20),
+      paddingVertical: verticalScale(5),
+      paddingHorizontal: scale(14),
+      marginTop: verticalScale(8),
+      gap: scale(5),
+    },
+    changeAvatarText: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      color: "#fff",
+      fontWeight: "bold",
+    },
 
-    // ── Name & Role ──
     name: {
       fontFamily: "Poppins",
       fontSize: scale(20),
@@ -669,7 +951,6 @@ const getStyles = (scale, verticalScale) =>
       marginBottom: verticalScale(20),
     },
 
-    // ── Class Card ──
     classCard: {
       width: "100%",
       backgroundColor: "#fff",
@@ -721,7 +1002,6 @@ const getStyles = (scale, verticalScale) =>
       fontWeight: "bold",
     },
 
-    // ── Stats Card ──
     statsCard: {
       width: "100%",
       backgroundColor: "#fff",
@@ -764,7 +1044,6 @@ const getStyles = (scale, verticalScale) =>
       marginLeft: scale(8),
     },
 
-    // ── Completed Books ──
     noBooks: {
       fontFamily: "Poppins",
       fontSize: scale(12),
@@ -798,7 +1077,6 @@ const getStyles = (scale, verticalScale) =>
       marginLeft: scale(8),
     },
 
-    // ── Footer / Logout ──
     footer: {
       paddingHorizontal: scale(40),
       paddingTop: verticalScale(12),
@@ -819,5 +1097,120 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(16),
       fontWeight: "bold",
       color: "#fff",
+    },
+
+    // ── Avatar Modal ──
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    avatarModalContainer: {
+      backgroundColor: "#fff",
+      borderRadius: scale(24),
+      padding: scale(24),
+      width: "88%",
+      alignItems: "center",
+      elevation: 10,
+    },
+    avatarModalTitle: {
+      fontFamily: "Mochi",
+      fontSize: scale(20),
+      color: "#FF9149",
+      marginBottom: verticalScale(16),
+    },
+    uploadPhotoBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#60B5FF",
+      borderRadius: scale(25),
+      paddingVertical: verticalScale(12),
+      paddingHorizontal: scale(24),
+      width: "100%",
+      marginBottom: verticalScale(16),
+    },
+    uploadPhotoBtnText: {
+      fontFamily: "PoppinsBold",
+      fontSize: scale(14),
+      color: "#fff",
+    },
+    avatarOrText: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      color: "#aaa",
+      marginBottom: verticalScale(14),
+    },
+    builtinAvatarRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: scale(12),
+      marginBottom: verticalScale(20),
+    },
+    builtinAvatarOption: {
+      alignItems: "center",
+      borderRadius: scale(16),
+      borderWidth: 2,
+      borderColor: "#eee",
+      padding: scale(8),
+      width: scale(72),
+      position: "relative",
+    },
+    builtinAvatarOptionSelected: {
+      borderColor: "#FF9149",
+      backgroundColor: "#fff5ee",
+    },
+    builtinAvatarImage: {
+      width: scale(48),
+      height: scale(48),
+    },
+    builtinAvatarLabel: {
+      fontFamily: "Poppins",
+      fontSize: scale(10),
+      color: "#555",
+      marginTop: verticalScale(4),
+    },
+    builtinAvatarCheck: {
+      position: "absolute",
+      top: scale(4),
+      right: scale(4),
+    },
+    avatarModalCancel: {
+      paddingVertical: verticalScale(10),
+      paddingHorizontal: scale(32),
+      borderRadius: scale(20),
+      backgroundColor: "#f2f2f2",
+    },
+    avatarModalCancelText: {
+      fontFamily: "Poppins",
+      fontSize: scale(13),
+      color: "#888",
+    },
+
+    // ── Image Source Modal ──
+    imageSourceContainer: {
+      backgroundColor: "#fff",
+      borderRadius: scale(16),
+      padding: scale(24),
+      width: "75%",
+      alignItems: "center",
+    },
+    imageSourceOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: verticalScale(12),
+      width: "100%",
+      gap: scale(12),
+    },
+    imageSourceOptionText: {
+      fontFamily: "Poppins",
+      fontSize: scale(15),
+      color: "#1a1a2e",
+    },
+    imageSourceDivider: {
+      height: 1,
+      backgroundColor: "#f0f0f0",
+      width: "100%",
     },
   });

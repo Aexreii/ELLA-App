@@ -199,7 +199,6 @@ export default function ReadBook({ route, navigation }) {
     pauseMusic();
     loadProgressAndCreateSession();
     return () => {
-      resumeMusic();
       voiceSoundRef.current?.unloadAsync();
       if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
       if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current); // ← add this
@@ -428,6 +427,7 @@ export default function ReadBook({ route, navigation }) {
         style: "destructive",
         onPress: async () => {
           await saveAndExit();
+          resumeMusic();
           navigation.navigate("HomeScreen");
         },
       },
@@ -639,6 +639,7 @@ export default function ReadBook({ route, navigation }) {
           text: "Done",
           onPress: async () => {
             await saveAndExit(true);
+            resumeMusic();
             navigation.navigate("HomeScreen");
           },
         },
@@ -660,7 +661,11 @@ export default function ReadBook({ route, navigation }) {
         clearTimeout(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
+      setMicActive(false);
+      setIsEvaluating(true);
+
       await stopAndEvaluate();
+      setIsEvaluating(false);
     } else {
       // ── Start recording ──────────────────────────────────
       try {
@@ -686,7 +691,9 @@ export default function ReadBook({ route, navigation }) {
           recordingTimerRef.current = null;
           if (recordingRef.current) {
             setMicActive(false);
+            setIsEvaluating(true);
             await stopAndEvaluate();
+            setIsEvaluating(false);
           }
         }, 9000);
       } catch (error) {

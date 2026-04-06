@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Modal,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -16,22 +17,15 @@ import Sidebar from "../components/Sidebar";
 import AppHeader from "../components/AppHeader";
 import useAppFonts from "../hook/useAppFonts";
 import { auth } from "../firebase";
-import { getFirestore, doc, updateDoc } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  updateDoc,
+  collection,
+  getDocs,
+} from "firebase/firestore";
 import { useScale } from "../utils/scaling";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const STICKER_COST = 50;
-
-const STICKERS = [
-  { id: "1", name: "Star Sticker", emoji: "⭐" },
-  { id: "2", name: "Heart Sticker", emoji: "❤️" },
-  { id: "3", name: "Fire Sticker", emoji: "🔥" },
-  { id: "4", name: "Crown Sticker", emoji: "👑" },
-  { id: "5", name: "Rainbow Sticker", emoji: "🌈" },
-  { id: "6", name: "Moon Sticker", emoji: "🌙" },
-  { id: "7", name: "Sun Sticker", emoji: "☀️" },
-  { id: "8", name: "Flower Sticker", emoji: "🌸" },
-];
 
 export default function Prizes() {
   const navigation = useNavigation();
@@ -51,14 +45,39 @@ export default function Prizes() {
     currUser?.ownedStickers || [],
   );
 
+  // ── Dynamic sticker state ──────────────────────────────
+  const [stickers, setStickers] = useState([]);
+  const [loadingStickers, setLoadingStickers] = useState(true);
+
   const fontsLoaded = useAppFonts();
-  if (!fontsLoaded) return null;
 
   const characterImages = {
     pink: require("../assets/animations/jump_pink.gif"),
     dino: require("../assets/animations/jump_dino.gif"),
     owl: require("../assets/animations/jump_owl.gif"),
   };
+
+  // ── Fetch stickers from Firestore ──────────────────────
+  useEffect(() => {
+    const fetchStickers = async () => {
+      try {
+        const db = getFirestore();
+        const snap = await getDocs(collection(db, "stickers"));
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // Sort by cost ascending so cheapest appear first
+        data.sort((a, b) => (a.cost ?? 0) - (b.cost ?? 0));
+        setStickers(data);
+      } catch (e) {
+        console.log("Fetch stickers error:", e);
+        Alert.alert("Error", "Failed to load stickers. Please try again.");
+      } finally {
+        setLoadingStickers(false);
+      }
+    };
+    fetchStickers();
+  }, []);
+
+  if (!fontsLoaded) return null;
 
   const handleMenuPress = () => {
     if (isMenuOpen) {
@@ -79,11 +98,14 @@ export default function Prizes() {
 
   const handleBuy = async () => {
     if (!selectedSticker) return;
+
     const currentPoints = currUser?.points ?? 0;
-    if (currentPoints < STICKER_COST) {
+    const stickerCost = selectedSticker.cost ?? 0;
+
+    if (currentPoints < stickerCost) {
       Alert.alert(
         "Not Enough Points",
-        `You need ${STICKER_COST} points. You have ${currentPoints}.`,
+        `You need ${stickerCost} points. You have ${currentPoints}.`,
       );
       return;
     }
@@ -91,6 +113,7 @@ export default function Prizes() {
       Alert.alert("Already Owned", "You already own this sticker!");
       return;
     }
+
     try {
       setPurchasing(true);
       const user = auth.currentUser;
@@ -98,13 +121,16 @@ export default function Prizes() {
         Alert.alert("Error", "You must be logged in.");
         return;
       }
+
       const db = getFirestore();
-      const newPoints = currentPoints - STICKER_COST;
+      const newPoints = currentPoints - stickerCost;
       const newOwnedStickers = [...ownedStickers, selectedSticker.id];
+
       await updateDoc(doc(db, "users", user.uid), {
         points: newPoints,
         ownedStickers: newOwnedStickers,
       });
+
       setCurrUser((prev) => ({ ...prev, points: newPoints }));
       setOwnedStickers(newOwnedStickers);
       setModalVisible(false);
@@ -121,6 +147,8 @@ export default function Prizes() {
 
   const renderSticker = ({ item }) => {
     const owned = ownedStickers.includes(item.id);
+    const stickerCost = item.cost ?? 0;
+
     return (
       <TouchableOpacity
         style={[
@@ -133,10 +161,17 @@ export default function Prizes() {
         }}
         activeOpacity={0.8}
       >
-        <Text style={s.stickerEmoji}>{item.emoji}</Text>
+        {/* Sticker image from Firestore imageUrl */}
+        <Image
+          source={{ uri: item.imageUrl }}
+          style={s.stickerImage}
+          contentFit="contain"
+        />
+
         <Text style={[s.stickerName, !owned && s.stickerNameLocked]}>
           {item.name}
         </Text>
+
         {owned ? (
           <View style={s.ownedBadge}>
             <Text style={s.ownedBadgeText}>Owned</Text>
@@ -147,18 +182,17 @@ export default function Prizes() {
               source={require("../assets/icons/diamond.png")}
               style={s.costIcon}
             />
-            <Text style={s.costText}>{STICKER_COST}</Text>
+            <Text style={s.costText}>{stickerCost}</Text>
           </View>
         )}
+
         {!owned && <View style={s.lockedOverlay} />}
       </TouchableOpacity>
     );
   };
 
   return (
-    // FIX: Root container has NO paddingTop so footer stays anchored correctly
     <View style={s.container}>
-      {/* FIX: insets.top only on the content area, not the root */}
       <View style={[s.content, { paddingTop: insets.top }]}>
         <AppHeader
           currUser={currUser}
@@ -168,23 +202,30 @@ export default function Prizes() {
 
         <Text style={s.sectionTitle}>Sticker Shop</Text>
         <Text style={s.sectionSubtitle}>
-          Each sticker costs{" "}
-          <Text style={{ color: "#FF9149", fontFamily: "PoppinsBold" }}>
-            {STICKER_COST} points
-          </Text>
+          Spend your points on exclusive stickers!
         </Text>
 
-        <FlatList
-          data={STICKERS}
-          renderItem={renderSticker}
-          keyExtractor={(item) => item.id}
-          numColumns={3}
-          contentContainerStyle={s.stickerGrid}
-          style={{ width: "100%" }}
-        />
+        {loadingStickers ? (
+          <ActivityIndicator
+            color="#FF9149"
+            size="large"
+            style={{ marginTop: verticalScale(40) }}
+          />
+        ) : stickers.length === 0 ? (
+          <Text style={s.emptyText}>No stickers available yet. 🎴</Text>
+        ) : (
+          <FlatList
+            data={stickers}
+            renderItem={renderSticker}
+            keyExtractor={(item) => item.id}
+            numColumns={3}
+            contentContainerStyle={s.stickerGrid}
+            style={{ width: "100%" }}
+          />
+        )}
       </View>
 
-      {/* Sticker Modal */}
+      {/* ── Sticker Detail Modal ── */}
       <Modal
         visible={modalVisible}
         transparent
@@ -195,34 +236,46 @@ export default function Prizes() {
           <View style={s.modalContainer}>
             {selectedSticker && (
               <>
-                <Text
-                  style={
-                    ownedStickers.includes(selectedSticker.id)
-                      ? s.modalEmoji
-                      : s.modalEmojiLocked
-                  }
-                >
-                  {ownedStickers.includes(selectedSticker.id)
-                    ? selectedSticker.emoji
-                    : "?"}
-                </Text>
+                {/* Show image if owned, blurred placeholder if not */}
+                <View style={s.modalImageWrapper}>
+                  {ownedStickers.includes(selectedSticker.id) ? (
+                    <Image
+                      source={{ uri: selectedSticker.imageUrl }}
+                      style={s.modalImage}
+                      contentFit="contain"
+                    />
+                  ) : (
+                    <View style={s.modalImageLocked}>
+                      <Ionicons
+                        name="lock-closed"
+                        size={scale(36)}
+                        color="#bbb"
+                      />
+                    </View>
+                  )}
+                </View>
+
                 <Text style={s.modalTitle}>{selectedSticker.name}</Text>
                 <Text style={s.modalDesc}>
                   A fun sticker to show off your achievement!
                 </Text>
+
                 <View style={s.modalCostRow}>
                   <Image
                     source={require("../assets/icons/diamond.png")}
                     style={s.modalCostIcon}
                   />
-                  <Text style={s.modalCostText}>{STICKER_COST} points</Text>
+                  <Text style={s.modalCostText}>
+                    {selectedSticker.cost ?? 0} points
+                  </Text>
                 </View>
+
                 <Text style={s.modalBalance}>
                   Your balance:{" "}
                   <Text
                     style={{
                       color:
-                        (currUser?.points ?? 0) >= STICKER_COST
+                        (currUser?.points ?? 0) >= (selectedSticker.cost ?? 0)
                           ? "#4CAF50"
                           : "#E53935",
                     }}
@@ -230,6 +283,7 @@ export default function Prizes() {
                     {currUser?.points ?? 0} points
                   </Text>
                 </Text>
+
                 <View style={s.modalButtons}>
                   <TouchableOpacity
                     style={s.modalCancelButton}
@@ -237,17 +291,18 @@ export default function Prizes() {
                   >
                     <Text style={s.modalCancelText}>Cancel</Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[
                       s.modalBuyButton,
-                      ((currUser?.points ?? 0) < STICKER_COST ||
+                      ((currUser?.points ?? 0) < (selectedSticker.cost ?? 0) ||
                         ownedStickers.includes(selectedSticker?.id)) &&
                         s.modalBuyButtonDisabled,
                     ]}
                     onPress={handleBuy}
                     disabled={
                       purchasing ||
-                      (currUser?.points ?? 0) < STICKER_COST ||
+                      (currUser?.points ?? 0) < (selectedSticker.cost ?? 0) ||
                       ownedStickers.includes(selectedSticker?.id)
                     }
                   >
@@ -275,7 +330,7 @@ export default function Prizes() {
         setIsExitDialogOpen={setIsExitDialogOpen}
       />
 
-      {/* Footer — anchored to bottom of root container, no insets */}
+      {/* ── Footer ── */}
       <View style={s.footer}>
         <TouchableOpacity
           style={s.footerButton}
@@ -300,10 +355,7 @@ export default function Prizes() {
 
 const getStyles = (scale, verticalScale) =>
   StyleSheet.create({
-    // Root container — no padding so absolute footer is always correct
     container: { flex: 1, backgroundColor: "#fff" },
-
-    // Inner content area — takes up all space above the footer
     content: {
       flex: 1,
       alignItems: "center",
@@ -323,21 +375,29 @@ const getStyles = (scale, verticalScale) =>
       color: "#666",
       marginBottom: verticalScale(10),
     },
+    emptyText: {
+      fontFamily: "Poppins",
+      fontSize: scale(14),
+      color: "#aaa",
+      marginTop: verticalScale(40),
+      textAlign: "center",
+    },
+
     stickerGrid: {
       paddingHorizontal: scale(10),
       paddingBottom: verticalScale(20),
       alignItems: "center",
     },
-
     stickerCard: {
       width: scale(100),
-      height: verticalScale(120),
+      height: verticalScale(130),
       borderRadius: scale(16),
       margin: scale(8),
       alignItems: "center",
       justifyContent: "center",
       borderWidth: 2,
       overflow: "hidden",
+      paddingVertical: verticalScale(8),
     },
     stickerCardOwned: { backgroundColor: "#fff5ee", borderColor: "#FF9149" },
     stickerCardLocked: { backgroundColor: "#f5f5f5", borderColor: "#ddd" },
@@ -350,12 +410,13 @@ const getStyles = (scale, verticalScale) =>
       backgroundColor: "rgba(180, 180, 180, 0.55)",
     },
 
-    stickerEmoji: { fontSize: scale(36), marginBottom: verticalScale(4) },
-    stickerEmojiLocked: {
-      fontSize: scale(36),
+    // ── Sticker image (from URL) ──
+    stickerImage: {
+      width: scale(52),
+      height: scale(52),
       marginBottom: verticalScale(4),
-      color: "#aaa",
     },
+
     stickerName: {
       fontFamily: "Poppins",
       fontSize: scale(10),
@@ -376,6 +437,7 @@ const getStyles = (scale, verticalScale) =>
     },
     costIcon: { width: scale(10), height: scale(10), marginRight: scale(3) },
     costText: { color: "#fff", fontSize: scale(10), fontFamily: "Poppins" },
+
     ownedBadge: {
       backgroundColor: "#FF9149",
       borderRadius: scale(20),
@@ -389,6 +451,7 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Poppins",
     },
 
+    // ── Modal ──
     modalOverlay: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.5)",
@@ -403,11 +466,24 @@ const getStyles = (scale, verticalScale) =>
       alignItems: "center",
       elevation: 10,
     },
-    modalEmoji: { fontSize: scale(64), marginBottom: verticalScale(10) },
-    modalEmojiLocked: {
-      fontSize: scale(64),
+    modalImageWrapper: {
+      width: scale(100),
+      height: scale(100),
       marginBottom: verticalScale(10),
-      color: "#bbb",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    modalImage: {
+      width: scale(100),
+      height: scale(100),
+    },
+    modalImageLocked: {
+      width: scale(100),
+      height: scale(100),
+      borderRadius: scale(16),
+      backgroundColor: "#f0f0f0",
+      alignItems: "center",
+      justifyContent: "center",
     },
     modalTitle: {
       fontFamily: "Mochi",
@@ -469,6 +545,7 @@ const getStyles = (scale, verticalScale) =>
       color: "#fff",
     },
 
+    // ── Footer ──
     footer: {
       position: "absolute",
       bottom: 0,

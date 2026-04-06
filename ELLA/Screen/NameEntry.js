@@ -112,7 +112,7 @@ export default function NameEntry() {
 
       console.log("Name and Class updated successfully for:", cleanName);
       setIsSaving(false);
-      navigation.navigate("HomeScreen");
+      navigation.navigate("AvatarSelect");
     } catch (error) {
       console.log("NameEntry Error:", error);
       setIsSaving(false);

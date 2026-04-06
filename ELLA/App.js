@@ -1,7 +1,7 @@
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { View, StatusBar } from "react-native";
+import { StatusBar } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useEffect } from "react";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
@@ -23,19 +23,24 @@ import Settings from "./Screen/Settings";
 import ManageClass from "./Screen/ManageClass";
 import TeacherBooks from "./Screen/TeacherBooks";
 import UploadBook from "./Screen/uploadBook";
+import AvatarSelect from "./Screen/avatarSelect";
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   const { user, profile, loading } = useAuth();
 
-  // At the top of App.js useEffect
   useEffect(() => {
-    const webClientId =
-      "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com";
-    console.log("[Google] Configuring with webClientId:", webClientId);
-    GoogleSignin.configure({ webClientId });
+    // ── Configure Google Sign-In once at app startup ──
+    // webClientId: the "Web client (auto created by Google Service)" from
+    // Google Cloud Console → APIs & Services → Credentials
+    GoogleSignin.configure({
+      webClientId:
+        "519631852985-rsq2kspa67ssiaecs2sjlg9g8pkkn27n.apps.googleusercontent.com",
+      offlineAccess: false,
+    });
   }, []);
+
   return (
     <MusicProvider>
       <SafeAreaProvider>
@@ -64,6 +69,7 @@ export default function App() {
             <Stack.Screen name="ManageClass" component={ManageClass} />
             <Stack.Screen name="TeacherBooks" component={TeacherBooks} />
             <Stack.Screen name="UploadBook" component={UploadBook} />
+            <Stack.Screen name="AvatarSelect" component={AvatarSelect} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>
