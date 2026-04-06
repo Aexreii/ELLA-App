@@ -55,6 +55,9 @@ export default function Prizes() {
     pink: require("../assets/animations/jump_pink.gif"),
     dino: require("../assets/animations/jump_dino.gif"),
     owl: require("../assets/animations/jump_owl.gif"),
+    custom: currUser?.customAvatarUrl
+      ? { uri: currUser.customAvatarUrl }
+      : require("../assets/animations/jump_pink.gif"),
   };
 
   // ── Fetch stickers from Firestore ──────────────────────

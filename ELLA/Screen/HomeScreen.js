@@ -49,6 +49,9 @@ export default function HomeScreen() {
     pink: require("../assets/animations/jump_pink.gif"),
     dino: require("../assets/animations/jump_dino.gif"),
     owl: require("../assets/animations/jump_owl.gif"),
+    custom: currUser?.customAvatarUrl
+      ? { uri: currUser.customAvatarUrl }
+      : null,
   };
 
   // ── Derived data ───────────────────────────────────────────
