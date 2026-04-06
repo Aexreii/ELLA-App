@@ -52,12 +52,10 @@ cd frontend
 npm install
 
 # Start the development server
-npm start
+npx expo start
 
-# Or run on specific platform
-npm run android    # Android emulator
-npm run ios        # iOS simulator
-npm run web        # Web browser
+# Or run on android
+npx expo run:android    # Android emulator
 ```
 
 ### Backend Setup
@@ -87,6 +85,9 @@ python app.py
 ```
 
 Server will start at `http://localhost:5000`
+
+
+##APK File
 
 ## 📚 Key Features
 
