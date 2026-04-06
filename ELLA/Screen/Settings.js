@@ -147,7 +147,7 @@ const getStyles = (scale, verticalScale) =>
       justifyContent: "space-between",
       backgroundColor: "#60B5FF",
       paddingHorizontal: scale(16),
-      paddingVertical: verticalScale(12),
+      paddingVertical: verticalScale(18),
     },
     backButton: {
       width: scale(40),

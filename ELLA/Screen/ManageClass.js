@@ -51,7 +51,7 @@ export default function ManageClass() {
       if (!uid) return;
 
       const classesSnap = await getDocs(
-        query(collection(db, "classes"), where("teacherId", "==", uid)),
+        query(collection(db, "classes"), where("teacherID", "==", uid)),
       );
 
       if (classesSnap.empty) {
@@ -100,10 +100,7 @@ export default function ManageClass() {
       <ScrollView contentContainerStyle={s.content}>
         <Text style={s.classTitle}>Class</Text>
 
-        {classData ? (
-          <Text style={s.classCode}>Code: {classData.code}</Text>
-        ) : null}
-
+        {classData && <Text style={s.classCode}>Code: {classData.code}</Text>}
         {loading ? (
           <ActivityIndicator
             color="#FF9149"
@@ -239,10 +236,8 @@ const getStyles = (scale, verticalScale) =>
       backgroundColor: "#fff",
       borderRadius: scale(14),
       marginBottom: verticalScale(10),
-      paddingHorizontal: scale(14),
-      paddingVertical: verticalScale(12),
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 1 },
+      paddingHorizontal: scale(20),
+      paddingVertical: verticalScale(20),
       shadowOpacity: 0.06,
       shadowRadius: 4,
       elevation: 2,
@@ -270,6 +265,7 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Poppins",
       fontSize: scale(14),
       color: "#aaa",
+      lineHeight: scale(20),
     },
     studentName: {
       fontFamily: "Poppins",
@@ -277,6 +273,7 @@ const getStyles = (scale, verticalScale) =>
       fontWeight: "bold",
       color: "#1a1a2e",
       textDecorationLine: "underline",
+      lineHeight: scale(20),
     },
 
     // ── Empty States ──

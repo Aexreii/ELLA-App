@@ -20,17 +20,9 @@ export function getRecommendedBooks(user, books = []) {
   if (user.points >= 400) maxDifficulty = "Advanced";
   else if (user.points >= 200) maxDifficulty = "Intermediate";
 
-  // ── FIX: exclude app/Ella books from recommended so they only appear in
-  // "Books from Ella" and don't get swallowed by the recommended section ──
+  // All books are eligible for recommended (including app/Ella books)
   const recommended = books
     .filter((b) => !completedBookIds.includes(b.id))
-    .filter(
-      (b) =>
-        b.source !== "app" &&
-        b.source !== "App" &&
-        b.source !== "ella" &&
-        b.source !== "Ella",
-    )
     .filter(
       (b) => difficultyOrder[b.difficulty] <= difficultyOrder[maxDifficulty],
     )
@@ -46,7 +38,13 @@ export function getRecommendedBooks(user, books = []) {
   );
 
   // Match "app", "App", "ella", "Ella"
-  const appBooks = books.filter((b) => b.source === "app");
+  const appBooks = books.filter(
+    (b) =>
+      b.source === "app" ||
+      b.source === "App" ||
+      b.source === "ella" ||
+      b.source === "Ella",
+  );
 
   return { recommended, teacherMaterials, studentUploads, appBooks };
 }

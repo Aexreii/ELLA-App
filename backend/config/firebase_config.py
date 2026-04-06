@@ -13,49 +13,30 @@ db = None
 firebase_initialized = False
 
 def initialize_firebase():
-    """
-    Initialize Firebase Admin SDK
-    Requires FIREBASE_CREDENTIALS environment variable with path to service account JSON
-    """
     global db, firebase_initialized
-    
     if firebase_initialized:
         return db
-    
+
     try:
-        # Get Firebase credentials from environment
-        creds_path = os.getenv('FIREBASE_CREDENTIALS')
-        
-        if not creds_path or creds_path == 'path/to/firebase-service-account.json':
-            # Try to get credentials from JSON string (alternative for deployment)
-            creds_json = os.getenv('FIREBASE_CREDENTIALS_JSON')
-            if creds_json:
-                cred_dict = json.loads(creds_json)
-                cred = credentials.Certificate(cred_dict)
-                firebase_admin.initialize_app(cred)
-                db = firestore.client()
-                firebase_initialized = True
-                print("✅ Firebase initialized successfully")
-                return db
-            else:
-                print("⚠️  Warning: No Firebase credentials found. Running in demo mode.")
-                print("   Authentication and database features will not work.")
-                firebase_initialized = True
-                db = None
-                return db
+        import json
+        # Try JSON string first (for cloud deployment)
+        creds_json = os.getenv('FIREBASE_CREDENTIALS_JSON')
+        if creds_json:
+            cred_dict = json.loads(creds_json)
+            cred = credentials.Certificate(cred_dict)
         else:
+            # Fall back to file path (for local development)
+            creds_path = os.getenv('FIREBASE_CREDENTIALS', 'ella-firebase-cred.json')
             cred = credentials.Certificate(creds_path)
-            # Initialize Firebase app
-            firebase_admin.initialize_app(cred)
-            # Initialize Firestore
-            db = firestore.client()
-            firebase_initialized = True
-            print("✅ Firebase initialized successfully")
-            return db
-        
+
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        firebase_initialized = True
+        print("✅ Firebase initialized successfully")
+        return db
+
     except Exception as e:
         print(f"⚠️  Firebase initialization failed: {str(e)}")
-        print("   Running in demo mode - auth/database features disabled")
         firebase_initialized = True
         db = None
         return db

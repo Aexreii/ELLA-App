@@ -59,7 +59,7 @@ export default function HomeScreen() {
   const teacherOwnBooks = books.filter(
     (b) =>
       (b.source === "Teacher" || b.source === "teacher") &&
-      b.uploadedById === currUser?.id,
+      b.uploadedById === currUser?.uid,
   );
 
   // Student view: books from libUtil
@@ -71,6 +71,10 @@ export default function HomeScreen() {
         studentUploads: [],
         appBooks: [],
       };
+
+  const myStudentUploads = studentUploads.filter(
+    (b) => b.uploadedById === currUser?.uid,
+  );
 
   const enrolledTeacherBooks =
     isEnrolled && classTeacherId
@@ -136,7 +140,7 @@ export default function HomeScreen() {
       if (!docSnap.exists()) return;
 
       const data = docSnap.data();
-      setCurrUser({ id: user.uid, ...data });
+      setCurrUser({ uid: user.uid, ...data });
 
       const classId = data.classEnrolled ?? null;
       setEnrolledClassId(classId);
@@ -178,7 +182,7 @@ export default function HomeScreen() {
     navigation.navigate("OpenBook", { book, currUser: user });
 
   const handleUploadBook = () => {
-    navigation.navigate("UploadBook");
+    navigation.navigate("UploadBook", { currUser });
   };
 
   const s = getStyles(scale, verticalScale);
@@ -404,7 +408,7 @@ export default function HomeScreen() {
                 ...(isEnrolled && enrolledTeacherBooks.length > 0
                   ? [{ label: "Teacher Materials", data: enrolledTeacherBooks }]
                   : []),
-                { label: "Student Uploads", data: studentUploads },
+                { label: "Student Uploads", data: myStudentUploads },
                 { label: "Books from Ella", data: ellaBooks },
               ]
                 .filter(({ data }) => data && data.length > 0)

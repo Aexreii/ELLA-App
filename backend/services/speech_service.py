@@ -8,21 +8,28 @@ import os
 import io
 
 class SpeechService:
-    def __init__(self):
-        """Initialize Google Speech-to-Text client"""
-        # Set credentials from environment variable
-        credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-        if credentials_path:
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
-        
-        try:
-            self.client = speech.SpeechClient()
-            print("✅ Google Speech-to-Text initialized successfully")
-        except Exception as e:
-            print(f"⚠️  Google Speech-to-Text not configured: {str(e)}")
-            print("   Speech recognition will not work until credentials are added.")
-            self.client = None
-    
+   def __init__(self):
+    try:
+        # Try JSON string first (for cloud deployment)
+        import json
+        google_creds_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+        if google_creds_json:
+            import tempfile
+            cred_dict = json.loads(google_creds_json)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(cred_dict, f)
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = f.name
+        else:
+            # Fall back to file path (for local development)
+            creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+            if creds_path:
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
+
+        self.client = speech.SpeechClient()
+        print("✅ Google Speech-to-Text initialized successfully")
+    except Exception as e:
+        print(f"⚠️  Google Speech-to-Text not configured: {str(e)}")
+        self.client = None
     def transcribe_audio(self, audio_content, language_code='en-US'):
         """
         Transcribe audio content to text

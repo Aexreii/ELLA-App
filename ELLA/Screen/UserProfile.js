@@ -61,7 +61,8 @@ export default function UserProfile() {
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
 
-  const isOwnProfile = currUser?.id === auth.currentUser?.uid;
+  const isOwnProfile =
+    (currUser?.uid ?? currUser?.id) === auth.currentUser?.uid;
   const isTeacher = currUser?.role === "Teacher";
 
   const [stats, setStats] = useState(null);
@@ -71,6 +72,7 @@ export default function UserProfile() {
   const [unenrolling, setUnenrolling] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [uploadedBooks, setUploadedBooks] = useState([]);
 
   useEffect(() => {
     fetchStats();
@@ -79,7 +81,7 @@ export default function UserProfile() {
   const fetchStats = async () => {
     try {
       const db = getFirestore();
-      const uid = currUser?.id;
+      const uid = currUser?.uid ?? currUser?.id;
       if (!uid) return;
 
       // ── Book progress ─────────────────────────────────────
@@ -134,7 +136,7 @@ export default function UserProfile() {
             const classData = classSnap.data();
             setEnrolledClass({
               id: classSnap.id,
-              code: classSnap.classCode || classSnap.id,
+              code: classData.code || classSnap.id,
               teacherName: classData.teacherName || "Unknown Teacher",
               teacherId: classData.teacherId,
             });
@@ -144,11 +146,32 @@ export default function UserProfile() {
 
       // ── Managed Classes (Teachers) ──
       let managedClassCount = 0;
+      let booksUploaded = 0;
+      let totalStudents = 0;
+
       if (isTeacher) {
         const classesSnap = await getDocs(
-          query(collection(db, "classes"), where("teacherId", "==", uid)),
+          query(collection(db, "classes"), where("teacherID", "==", uid)),
         );
         managedClassCount = classesSnap.size;
+
+        // Count total students across all classes
+        classesSnap.docs.forEach((d) => {
+          totalStudents += d.data().students?.length ?? 0;
+        });
+
+        // Count uploaded books
+        const booksSnap = await getDocs(
+          query(
+            collection(db, "books"),
+            where("source", "==", "Teacher"),
+            where("uploadedById", "==", uid),
+          ),
+        );
+        booksUploaded = booksSnap.size;
+        setUploadedBooks(
+          booksSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        );
       }
 
       setStats({
@@ -157,6 +180,8 @@ export default function UserProfile() {
         stickersUnlocked,
         readingTime: formatTime(totalTimeSeconds),
         managedClassCount,
+        totalStudents,
+        booksUploaded,
       });
     } catch (error) {
       console.log("Error fetching profile stats:", error);
@@ -322,10 +347,8 @@ export default function UserProfile() {
         <View style={s.classCard}>
           {isTeacher ? (
             <View style={s.classRow}>
-              <Text style={s.classLabel}>Classes Managed: </Text>
-              <Text style={s.classValue}>
-                {loading ? "—" : (stats?.managedClassCount ?? 0)}
-              </Text>
+              <Text style={s.classLabel}>Class Code: </Text>
+              <Text style={s.classValue}>{currUser?.classCode ?? "—"}</Text>
             </View>
           ) : loading ? (
             <View style={s.classRow}>
@@ -386,7 +409,9 @@ export default function UserProfile() {
 
         {/* ── Reading Statistics ── */}
         <View style={s.statsCard}>
-          <Text style={s.statsTitle}>Reading Statistics</Text>
+          <Text style={s.statsTitle}>
+            {isTeacher ? "Teaching Statistics" : "Reading Statistics"}
+          </Text>
 
           {loading ? (
             <ActivityIndicator
@@ -394,6 +419,20 @@ export default function UserProfile() {
               size="small"
               style={{ marginVertical: verticalScale(20) }}
             />
+          ) : isTeacher ? (
+            <>
+              <StatRow
+                label="Books Uploaded"
+                value={String(stats?.booksUploaded ?? 0)}
+                s={s}
+              />
+              <StatRow
+                label="Students Handled"
+                value={String(stats?.totalStudents ?? 0)}
+                s={s}
+                last
+              />
+            </>
           ) : (
             <>
               <StatRow
@@ -422,10 +461,46 @@ export default function UserProfile() {
         </View>
 
         {/* ── Completed Books ── */}
-        {!isTeacher && (
+        {/* ── Completed Books (students) / Uploaded Books (teachers) ── */}
+        {isTeacher ? (
+          <View style={s.statsCard}>
+            <Text style={s.statsTitle}>Uploaded Books</Text>
+            {loading ? (
+              <ActivityIndicator
+                color="#FF9149"
+                size="small"
+                style={{ marginVertical: verticalScale(20) }}
+              />
+            ) : uploadedBooks.length === 0 ? (
+              <Text style={s.noBooks}>No books uploaded yet. 📚</Text>
+            ) : (
+              uploadedBooks.map((book, i) => (
+                <View
+                  key={book.id}
+                  style={[
+                    s.bookRow,
+                    i === uploadedBooks.length - 1 && { borderBottomWidth: 0 },
+                  ]}
+                >
+                  <View style={s.bookRowLeft}>
+                    <Ionicons
+                      name="book-outline"
+                      size={scale(18)}
+                      color="#60B5FF"
+                      style={{ marginRight: scale(10) }}
+                    />
+                    <Text style={s.bookRowTitle} numberOfLines={2}>
+                      {book.title}
+                    </Text>
+                  </View>
+                  <Text style={s.bookRowDifficulty}>{book.difficulty}</Text>
+                </View>
+              ))
+            )}
+          </View>
+        ) : (
           <View style={s.statsCard}>
             <Text style={s.statsTitle}>Completed Books</Text>
-
             {loading ? (
               <ActivityIndicator
                 color="#FF9149"
@@ -521,7 +596,7 @@ const getStyles = (scale, verticalScale) =>
       justifyContent: "space-between",
       backgroundColor: "#60B5FF",
       paddingHorizontal: scale(16),
-      paddingVertical: verticalScale(12),
+      paddingVertical: verticalScale(18),
     },
     backButton: {
       width: scale(40),
@@ -616,14 +691,16 @@ const getStyles = (scale, verticalScale) =>
     },
     classLabel: {
       fontFamily: "Poppins",
-      fontSize: scale(13),
-      fontWeight: "bold",
+      fontSize: scale(16),
       color: "#333",
+      lineHeight: 25,
     },
     classValue: {
       fontFamily: "Poppins",
-      fontSize: scale(13),
+      fontSize: scale(16),
       color: "#333",
+      lineHeight: 25,
+      fontWeight: "bold",
     },
     classValueMuted: {
       fontFamily: "Poppins",

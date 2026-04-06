@@ -110,7 +110,7 @@ export default function TeacherBooks() {
   const s = getStyles(scale, verticalScale);
 
   return (
-    <View style={[s.container, { paddingTop: insets.top }]}>
+    <View style={s.container}>
       {/* ── Header ── */}
       <View style={s.header}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
@@ -226,7 +226,11 @@ export default function TeacherBooks() {
 
 const getStyles = (scale, verticalScale) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#f2f2f2" },
+    container: {
+      flex: 1,
+      backgroundColor: "#f2f2f2",
+      marginTop: verticalScale(30),
+    },
 
     // ── Header ──
     header: {
