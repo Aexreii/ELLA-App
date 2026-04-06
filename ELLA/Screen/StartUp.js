@@ -8,10 +8,9 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useNavigation } from "@react-navigation/native";
 import useAppFonts from "../hook/useAppFonts";
 import { useScale } from "../utils/scaling";
 import { auth } from "../firebase";
@@ -27,28 +26,22 @@ import {
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-import { FontAwesome } from "@expo/vector-icons";
+
 export default function StartUp({ navigation }) {
   const { scale, verticalScale } = useScale();
 
   const [showEmailForm, setShowEmailForm] = useState(false);
-  const [showName, setshowName] = useState(true);
+  const [showName, setShowName] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
   const fontsLoaded = useAppFonts();
-
-  useEffect(() => {
-    GoogleSignin.configure({
-      webClientId:
-        "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com",
-    });
-  }, []);
-
   if (!fontsLoaded) return null;
 
+  // ── Forgot password ────────────────────────────────────────
   const handleForgotPass = async () => {
     if (!email) {
       Alert.alert("Error", "Please enter your email address first.");
@@ -58,11 +51,10 @@ export default function StartUp({ navigation }) {
       setIsSubmitting(true);
       await sendPasswordResetEmail(auth, email.trim());
       Alert.alert(
-        "Password Reset Email Sent",
-        "Please check your inbox and follow the instructions to reset your password.",
+        "Password Reset Sent",
+        "Check your inbox for reset instructions.",
       );
     } catch (error) {
-      console.log(error);
       if (error.code === "auth/user-not-found")
         Alert.alert("Error", "No account found with this email.");
       else if (error.code === "auth/invalid-email")
@@ -73,9 +65,10 @@ export default function StartUp({ navigation }) {
     }
   };
 
+  // ── Email sign-in ──────────────────────────────────────────
   const handleEmailSignIn = async () => {
     if (!showEmailForm) {
-      setshowName(false);
+      setShowName(false);
       setShowEmailForm(true);
       return;
     }
@@ -86,41 +79,35 @@ export default function StartUp({ navigation }) {
     try {
       setEmailLoading(true);
       setIsSubmitting(true);
-      const response = await signInWithEmailAndPassword(
+      const { user } = await signInWithEmailAndPassword(
         auth,
         email.trim(),
         password,
       );
-      const users = response.user;
-      console.log("User signed in:", users.uid);
       const db = getFirestore();
-      const userRef = doc(db, "users", users.uid);
-      const docSnap = await getDoc(userRef);
-      if (!docSnap.exists()) {
+      const userRef = doc(db, "users", user.uid);
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
         await setDoc(userRef, {
           name: null,
           age: null,
           role: null,
           points: 0,
-          character: "pink",
-          email: users.email,
+          character: null,
+          email: user.email,
           progress: [],
           ownedStickers: [],
           createdAt: new Date(),
           provider: "email",
-          id: users.uid,
+          id: user.uid,
         });
       }
-      const updatedDoc = await getDoc(userRef);
-      const userData = updatedDoc.data();
-      ``;
-      if (!userData.role) {
-        navigation.replace("RoleSelect");
-      } else if (!userData.name || !userData.age) {
-        navigation.replace("NameEntry");
-      } else navigation.replace("HomeScreen");
+      const userData = (await getDoc(userRef)).data();
+      if (!userData.role) navigation.replace("RoleSelect");
+      else if (!userData.name || !userData.age) navigation.replace("NameEntry");
+      else if (!userData.character) navigation.replace("AvatarSelect");
+      else navigation.replace("HomeScreen");
     } catch (error) {
-      console.log(error);
       switch (error.code) {
         case "auth/user-not-found":
           Alert.alert("Error", "No account found with this email");
@@ -140,58 +127,63 @@ export default function StartUp({ navigation }) {
     }
   };
 
+  // ── Google sign-in ─────────────────────────────────────────
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
-
-      setIsSubmitting(true);
-      console.log("[Google] Step 1: checking play services");
       await GoogleSignin.hasPlayServices({
         showPlayServicesUpdateDialog: true,
       });
-      console.log("[Google] Step 2: signing in");
+
+      // Sign out first to always show account picker
+      await GoogleSignin.signOut().catch(() => {});
+
       await GoogleSignin.signIn();
-      console.log("[Google] Step 3: getting tokens");
       const { idToken } = await GoogleSignin.getTokens();
+
+      if (!idToken) throw new Error("No ID token returned from Google");
+
       const credential = GoogleAuthProvider.credential(idToken);
-      const userCredential = await signInWithCredential(auth, credential);
-      const user = userCredential.user;
+      const { user } = await signInWithCredential(auth, credential);
+
       const db = getFirestore();
       const userRef = doc(db, "users", user.uid);
-      const docSnap = await getDoc(userRef);
-      if (!docSnap.exists()) {
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
         await setDoc(userRef, {
-          classEnrolled: null,
           name: null,
           age: null,
           role: null,
           points: 0,
-          character: "dino",
+          character: null,
           email: user.email,
+          classEnrolled: null,
           createdAt: new Date(),
           provider: "google",
         });
       }
-      const updatedDoc = await getDoc(userRef);
-      const userData = updatedDoc.data();
-      if (!userData.name || !userData.age || !userData.role)
-        navigation.replace("RoleSelect");
+      const userData = (await getDoc(userRef)).data();
+      if (!userData.role) navigation.replace("RoleSelect");
+      else if (!userData.name || !userData.age) navigation.replace("NameEntry");
+      else if (!userData.character) navigation.replace("AvatarSelect");
       else navigation.replace("HomeScreen");
     } catch (error) {
-      console.log("Google Sign-in Error:", error);
+      console.log("Google Sign-in error:", error);
       if (isErrorWithCode(error)) {
         switch (error.code) {
+          case statusCodes.SIGN_IN_CANCELLED:
+            break; // user dismissed — no alert needed
           case statusCodes.IN_PROGRESS:
-            Alert.alert("Google sign-in already in progress.");
+            Alert.alert("Already signing in, please wait.");
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
             Alert.alert("Google Play Services not available.");
             break;
           default:
-            Alert.alert("Login Error", error.message);
+            Alert.alert("Sign-in Error", error.message);
         }
       } else {
-        Alert.alert("Unexpected Error", error.message);
+        Alert.alert("Sign-in Error", error.message ?? "Something went wrong");
       }
     } finally {
       setIsSubmitting(false);
@@ -210,22 +202,24 @@ export default function StartUp({ navigation }) {
         contentFit="fill"
         transition={0}
       />
-      {showName ? <Text style={s.welcome}>Welcome!</Text> : null}
+      {showName && <Text style={s.welcome}>Welcome!</Text>}
 
-      {showEmailForm ? (
+      {showEmailForm && (
         <View style={s.formContainer}>
           <TextInput
             style={s.input}
             placeholder="Email"
-            placeholderTextColor="#000000"
+            placeholderTextColor="#000"
             value={email}
             onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
           />
           <View style={s.inputBox}>
             <TextInput
               style={s.inputPass}
               placeholder="Password"
-              placeholderTextColor="#000000"
+              placeholderTextColor="#000"
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
@@ -242,7 +236,7 @@ export default function StartUp({ navigation }) {
             <Text style={s.forgetPass}>Forgot Password?</Text>
           </TouchableOpacity>
         </View>
-      ) : null}
+      )}
 
       <TouchableOpacity
         style={[s.buttonEmail, emailLoading && { opacity: 0.8 }]}
@@ -260,7 +254,7 @@ export default function StartUp({ navigation }) {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={s.buttonGoogle}
+        style={[s.buttonGoogle, isSubmitting && { opacity: 0.7 }]}
         onPress={handleGoogleSignIn}
         disabled={isSubmitting}
       >

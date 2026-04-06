@@ -35,6 +35,7 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ── Email sign-up ──────────────────────────────────────────
   const handleEmailSignUp = async () => {
     if (!email || !password) {
       Alert.alert("Error", "Please enter email and password");
@@ -46,32 +47,29 @@ export default function SignUp() {
     }
     try {
       setLoading(true);
-      const response = await createUserWithEmailAndPassword(
+      const { user } = await createUserWithEmailAndPassword(
         auth,
         email.trim(),
         password,
       );
-      const user = response.user;
-      console.log("User created:", user.uid);
       const db = getFirestore();
       await setDoc(doc(db, "users", user.uid), {
         name: null,
         age: null,
         role: null,
         points: 0,
-        character: "pink",
+        character: null,
         email: user.email,
         progress: [],
         ownedStickers: [],
         createdAt: new Date(),
         id: user.uid,
         provider: "email",
+        classEnrolled: null,
       });
-      console.log("Firestore document created for:", user.uid);
       Alert.alert("Success", "Account created successfully!");
-      navigation.navigate("RoleSelect");
+      navigation.replace("RoleSelect");
     } catch (error) {
-      console.log(error);
       if (error.code === "auth/email-already-in-use")
         Alert.alert("Error", "Email is already in use");
       else if (error.code === "auth/invalid-email")
@@ -84,71 +82,65 @@ export default function SignUp() {
     }
   };
 
+  // ── Google sign-up ─────────────────────────────────────────
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
-      const currentUser = await GoogleSignin.getCurrentUser();
-      console.log("[Google] currentUser:", JSON.stringify(currentUser));
-
-      const isSignedIn = await GoogleSignin.isSignedIn();
-      console.log("[Google] isSignedIn:", isSignedIn);
-      // ── DEBUG: check Play Services ──
       await GoogleSignin.hasPlayServices({
         showPlayServicesUpdateDialog: true,
       });
-      console.log("[Google] Play Services OK");
+
+      // Sign out first so account picker always appears
+      await GoogleSignin.signOut().catch(() => {});
 
       await GoogleSignin.signIn();
-      console.log("[Google] signIn OK");
-
       const { idToken } = await GoogleSignin.getTokens();
-      console.log("[Google] idToken exists:", !!idToken);
-      console.log("[Google] idToken prefix:", idToken?.slice(0, 20));
+
+      if (!idToken) throw new Error("No ID token returned from Google");
 
       const credential = GoogleAuthProvider.credential(idToken);
-      const userCredential = await signInWithCredential(auth, credential);
-      const user = userCredential.user;
+      const { user } = await signInWithCredential(auth, credential);
 
       const db = getFirestore();
       const userRef = doc(db, "users", user.uid);
-      const docSnap = await getDoc(userRef);
-
-      if (!docSnap.exists()) {
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
         await setDoc(userRef, {
           name: null,
           age: null,
           role: null,
           points: 0,
-          character: "pink",
+          character: null,
           email: user.email,
           progress: [],
           ownedStickers: [],
           createdAt: new Date(),
           provider: "google",
           id: user.uid,
+          classEnrolled: null,
         });
       }
-
-      const updatedDoc = await getDoc(userRef);
-      const userData = updatedDoc.data();
-
+      const userData = (await getDoc(userRef)).data();
       if (!userData.role) navigation.replace("RoleSelect");
       else if (!userData.name || !userData.age) navigation.replace("NameEntry");
       else navigation.replace("HomeScreen");
     } catch (error) {
+      console.log("Google Sign-up error:", error);
       if (isErrorWithCode(error)) {
         switch (error.code) {
+          case statusCodes.SIGN_IN_CANCELLED:
+            break;
           case statusCodes.IN_PROGRESS:
-            Alert.alert("Google sign-in already in progress.");
+            Alert.alert("Already signing in, please wait.");
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
             Alert.alert("Google Play Services not available.");
             break;
           default:
-            Alert.alert("Login Error", error.message);
+            Alert.alert("Sign-up Error", error.message);
         }
       } else {
-        Alert.alert("Unexpected Error", error.message);
+        Alert.alert("Sign-up Error", error.message ?? "Something went wrong");
       }
     } finally {
       setIsSubmitting(false);
@@ -214,7 +206,7 @@ export default function SignUp() {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={s.buttonGoogle}
+        style={[s.buttonGoogle, isSubmitting && { opacity: 0.7 }]}
         onPress={handleGoogleSignIn}
         disabled={isSubmitting}
       >

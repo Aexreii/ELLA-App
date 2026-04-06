@@ -14,31 +14,15 @@
       },
       "oauth_client": [
         {
-          "client_id": "519631852985-8v21f0dhg8vse2ehkjoa75pc6f4pq8bv.apps.googleusercontent.com",
+          "client_id": "519631852985-jna1qbg3sfc0ti0kkvqv113qr1co3ilm.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.ella.app",
-            "certificate_hash": "6b61bb27a4a029b648e3405273a88582bd2aa030"
+            "certificate_hash": "0b7519767e21db6c83c8529d2fe112f213440ea2"
           }
         },
         {
-          "client_id": "519631852985-c799qkfuvvukias54ucokpltnhlnl6bt.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.ella.app",
-            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
-          }
-        },
-        {
-          "client_id": "519631852985-sdlenvik478r96poorr3hfd9at7vk5fj.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.ella.app",
-            "certificate_hash": "e2a4e24d9646706decc03bf44dc9602797bf3ff9"
-          }
-        },
-        {
-          "client_id": "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com",
+          "client_id": "519631852985-rsq2kspa67ssiaecs2sjlg9g8pkkn27n.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
@@ -51,7 +35,7 @@
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "519631852985-1jc2t0qu9e9kp6lfons0q0r47rkk55jp.apps.googleusercontent.com",
+              "client_id": "519631852985-rsq2kspa67ssiaecs2sjlg9g8pkkn27n.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
