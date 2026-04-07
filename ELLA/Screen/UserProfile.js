@@ -294,6 +294,7 @@ export default function UserProfile() {
 
       await updateDoc(doc(db, "users", uid), {
         customAvatarUrl: url,
+        character: "custom",
       });
 
       setCustomAvatarUrl(url);
