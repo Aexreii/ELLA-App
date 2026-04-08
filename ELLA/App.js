@@ -24,6 +24,7 @@ import ManageClass from "./Screen/ManageClass";
 import TeacherBooks from "./Screen/TeacherBooks";
 import UploadBook from "./Screen/uploadBook";
 import AvatarSelect from "./Screen/avatarSelect";
+import ContactUs from "./Screen/ContactUs";
 
 const Stack = createNativeStackNavigator();
 
@@ -53,7 +54,7 @@ export default function App() {
           <Stack.Navigator
             screenOptions={{
               headerShown: false,
-              contentStyle: { backgroundColor: "#fff" },
+              contentStyle: { backgroundColor: "#FFF", paddingBottom: 2 },
             }}
           >
             <Stack.Screen name="StartUp" component={StartUp} />
@@ -70,6 +71,7 @@ export default function App() {
             <Stack.Screen name="TeacherBooks" component={TeacherBooks} />
             <Stack.Screen name="UploadBook" component={UploadBook} />
             <Stack.Screen name="AvatarSelect" component={AvatarSelect} />
+            <Stack.Screen name="ContactUs" component={ContactUs} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>

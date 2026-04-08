@@ -67,8 +67,6 @@ const VOICE_FILES = {
 };
 
 // Aligns spoken words to expected words using dynamic programming
-// Returns an array matching expectedWords length:
-// "correct" = said correctly, "wrong" = said wrong or skipped
 function alignWords(expectedWords, spokenWords) {
   const exp = expectedWords.map(cleanWord);
   const spk = spokenWords.map(cleanWord).filter(Boolean);
@@ -76,7 +74,6 @@ function alignWords(expectedWords, spokenWords) {
   const m = exp.length;
   const n = spk.length;
 
-  // Build DP table for longest common subsequence
   const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
@@ -88,7 +85,6 @@ function alignWords(expectedWords, spokenWords) {
     }
   }
 
-  // Backtrack to find which expected words were matched
   const matched = new Array(m).fill(false);
   let i = m,
     j = n;
@@ -143,10 +139,30 @@ function unflattenWordResults(flat, book) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────
+// Character assets (defined outside component — stable refs)
+// ─────────────────────────────────────────────────────────────
+const CHARACTER_ASSETS = {
+  pink: require("../assets/animations/jump_pink.gif"),
+  dino: require("../assets/animations/jump_dino.gif"),
+  owl: require("../assets/animations/jump_owl.gif"),
+};
+const CHARACTER_KEYS = Object.keys(CHARACTER_ASSETS);
+
 export default function ReadBook({ route, navigation }) {
   const { book, currUser } = route.params;
   const { pauseMusic, resumeMusic, soundVolume, ttsVoice } = useMusic();
   const { scale, verticalScale } = useScale();
+
+  // ── If the user has a custom avatar, pick a random built-in character
+  //    once per screen mount and keep it stable via useRef.
+  const avatarSource = useRef(
+    currUser?.character === "custom" || !CHARACTER_ASSETS[currUser?.character]
+      ? CHARACTER_ASSETS[
+          CHARACTER_KEYS[Math.floor(Math.random() * CHARACTER_KEYS.length)]
+        ]
+      : CHARACTER_ASSETS[currUser.character],
+  ).current;
 
   const [currentSentence, setCurrentSentence] = useState(0);
   const [progressLoaded, setProgressLoaded] = useState(false);
@@ -171,7 +187,6 @@ export default function ReadBook({ route, navigation }) {
   const recordingRef = useRef(null);
   const recordingTimerRef = useRef(null);
 
-  // ── CHANGED: sessionId is now deterministic = `${uid}_${sessionTimestamp}` ──
   const sessionIdRef = useRef(null);
   const sessionStartRef = useRef(Date.now());
   const wordTapCountsRef = useRef({});
@@ -180,17 +195,9 @@ export default function ReadBook({ route, navigation }) {
 
   const sentenceWords = book.contents[currentSentence].split(" ");
   const currentWordResults = wordResults[currentSentence];
-  const allWordsCorrect = currentWordResults.every(
-    (r) => r === "correct" || r === "wrong",
-  );
+  const allWordsCorrect = currentWordResults.every((r) => r === "correct");
   const isLastSentence = currentSentence === book.contents.length - 1;
   const [isEvaluating, setIsEvaluating] = useState(false);
-
-  const characterImages = {
-    pink: require("../assets/animations/jump_pink.gif"),
-    dino: require("../assets/animations/jump_dino.gif"),
-    owl: require("../assets/animations/jump_owl.gif"),
-  };
 
   // ─────────────────────────────────────────────────────────
   // 1. Mount: load saved progress then create session
@@ -201,9 +208,10 @@ export default function ReadBook({ route, navigation }) {
     return () => {
       voiceSoundRef.current?.unloadAsync();
       if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
-      if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current); // ← add this
+      if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
     };
   }, []);
+
   const loadProgressAndCreateSession = async () => {
     try {
       const db = getFirestore();
@@ -213,7 +221,6 @@ export default function ReadBook({ route, navigation }) {
         return;
       }
 
-      // ── Load user progress ──────────────────────────────
       const progressId = `${uid}_${book.id}`;
       const progressSnap = await getDoc(doc(db, "userProgress", progressId));
 
@@ -262,9 +269,6 @@ export default function ReadBook({ route, navigation }) {
 
       setProgressLoaded(true);
 
-      // ── CHANGED: Build deterministic session ID = `${uid}_${timestamp}` ──
-      // This makes it trivial to query the most recent session for a user
-      // from HomeScreen by ordering on startedAt or by the doc ID itself.
       const sessionTimestamp = Date.now();
       const newSessionId = `${uid}_${sessionTimestamp}`;
       sessionIdRef.current = newSessionId;
@@ -358,7 +362,6 @@ export default function ReadBook({ route, navigation }) {
         });
       }
 
-      // ── Update session doc using the deterministic ID ──
       if (sessionIdRef.current) {
         batch.update(doc(db, "readingSessions", sessionIdRef.current), {
           endedAt: serverTimestamp(),
@@ -583,14 +586,12 @@ export default function ReadBook({ route, navigation }) {
   const handleWordPress = async (index) => {
     if (wordResults[currentSentence][index] === "correct") return;
 
-    // Flash orange
     setWordResults((prev) => {
       const next = prev.map((s) => [...s]);
       next[currentSentence][index] = "orange";
       return next;
     });
 
-    // Pronounce the word
     try {
       const word = sentenceWords[index];
       const result = await pronounceWord(word, ttsVoice);
@@ -608,7 +609,6 @@ export default function ReadBook({ route, navigation }) {
       console.log("[TTS] error:", e);
     }
 
-    // Reset orange after 800ms
     setTimeout(() => {
       setWordResults((prev) => {
         const next = prev.map((s) => [...s]);
@@ -656,7 +656,6 @@ export default function ReadBook({ route, navigation }) {
   // ─────────────────────────────────────────────────────────
   const handleMicPress = async () => {
     if (micActive) {
-      // ── Manual stop ──────────────────────────────────────
       if (recordingTimerRef.current) {
         clearTimeout(recordingTimerRef.current);
         recordingTimerRef.current = null;
@@ -667,7 +666,6 @@ export default function ReadBook({ route, navigation }) {
       await stopAndEvaluate();
       setIsEvaluating(false);
     } else {
-      // ── Start recording ──────────────────────────────────
       try {
         const { status } = await Audio.requestPermissionsAsync();
         if (status !== "granted") {
@@ -686,7 +684,6 @@ export default function ReadBook({ route, navigation }) {
         recordingRef.current = recording;
         setMicActive(true);
 
-        // ── Auto-stop after 10 seconds ───────────────────
         recordingTimerRef.current = setTimeout(async () => {
           recordingTimerRef.current = null;
           if (recordingRef.current) {
@@ -702,7 +699,6 @@ export default function ReadBook({ route, navigation }) {
     }
   };
 
-  // ── Extracted so both manual and auto-stop share the same logic ──
   const stopAndEvaluate = async () => {
     setIsEvaluating(true);
     try {
@@ -712,7 +708,6 @@ export default function ReadBook({ route, navigation }) {
       const uri = recordingRef.current.getURI();
       recordingRef.current = null;
 
-      // Only send words that aren't already correct
       const currentResults = wordResultsRef.current[currentSentence];
       const remainingWords = sentenceWords.filter(
         (_, i) => currentResults[i] !== "correct",
@@ -728,10 +723,9 @@ export default function ReadBook({ route, navigation }) {
       const spokenWords = result.transcript.trim().split(/\s+/);
       const remainingResults = alignWords(remainingWords, spokenWords);
 
-      // Merge back — correct words stay correct, others get new result
       let remainingIndex = 0;
       const mergedResults = currentResults.map((existing) => {
-        if (existing === "correct") return "correct"; // ← never overwrite green
+        if (existing === "correct") return "correct";
         return remainingResults[remainingIndex++] ?? "wrong";
       });
 
@@ -765,7 +759,7 @@ export default function ReadBook({ route, navigation }) {
       setMicActive(false);
       recordingRef.current = null;
     } finally {
-      setIsEvaluating(false); // ← re-enable mic after evaluation
+      setIsEvaluating(false);
     }
   };
 
@@ -884,12 +878,12 @@ export default function ReadBook({ route, navigation }) {
           style={[
             s.micButton,
             micActive && s.micButtonActive,
-            isEvaluating && s.micButtonDisabled, // ← gray out while evaluating
+            isEvaluating && s.micButtonDisabled,
           ]}
           onPress={handleMicPress}
         >
           {isEvaluating ? (
-            <ActivityIndicator size="small" color="#fff" /> // ← show spinner
+            <ActivityIndicator size="small" color="#fff" />
           ) : (
             <Ionicons
               name={micActive ? "stop-circle-outline" : "mic-outline"}
@@ -956,8 +950,9 @@ export default function ReadBook({ route, navigation }) {
           </Animated.View>
         )}
 
+        {/* ── Use the stable avatarSource resolved at mount ── */}
         <Image
-          source={characterImages[currUser?.character] ?? characterImages.pink}
+          source={avatarSource}
           style={s.avatarImage}
           contentFit="contain"
         />
