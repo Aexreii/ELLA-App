@@ -178,7 +178,7 @@ export default function Sidebar({
             {/* Contact Us */}
             <TouchableOpacity
               style={styles.menuButton}
-              onPress={() => console.log("Contact us pressed")}
+              onPress={() => navigation.navigate("ContactUs")}
             >
               <Ionicons name="chatbubble-outline" size={24} color="#333" />
               <Text style={styles.menuButtonText}>Contact us</Text>

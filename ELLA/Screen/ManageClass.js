@@ -152,9 +152,9 @@ export default function ManageClass() {
                   <Image
                     source={
                       student.character === "custom" && student.customAvatarUrl
-                        ? { uri: student.customAvatarUrl } // Use the dynamic link
-                        : (characterAssets[student.character] ??
-                          characterAssets.pink) // Fallback to local asset
+                        ? { uri: student.customAvatarUrl }
+                        : (characterImages[student.character] ??
+                          characterImages.pink)
                     }
                     style={s.avatar}
                     contentFit="cover"
