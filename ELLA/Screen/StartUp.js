@@ -25,7 +25,7 @@ import {
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-import EllAlert, { useEllAlert } from "../components/Ellart";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function StartUp({ navigation }) {
   const { scale, verticalScale } = useScale();

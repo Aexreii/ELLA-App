@@ -20,7 +20,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { auth } from "../firebase";
-import EllAlert, { useEllAlert } from "../components/Ellalert";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 const GFORM_URL =
   "https://docs.google.com/forms/d/e/1FAIpQLScFCtskkZeLfHakWIP9bJEjNF6d3rwkiSMLv6KdZQoq5VoZ5Q/formResponse";

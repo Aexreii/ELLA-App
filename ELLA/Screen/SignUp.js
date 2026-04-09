@@ -23,7 +23,7 @@ import {
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-import EllAlert, { useEllAlert } from "../components/Ellalert";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function SignUp() {
   const navigation = useNavigation();

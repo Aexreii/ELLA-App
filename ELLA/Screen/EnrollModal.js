@@ -21,7 +21,7 @@ import {
   doc,
   arrayUnion,
 } from "firebase/firestore";
-import EllAlert, { useEllAlert } from "../components/Ellalert";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function EnrollModal({ visible, onClose }) {
   const { scale, verticalScale } = useScale();

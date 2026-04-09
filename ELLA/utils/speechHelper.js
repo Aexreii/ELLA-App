@@ -30,52 +30,54 @@ export const RECORDING_OPTIONS = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Homophones + commonly misheard words
-// The STT engine often substitutes these — we normalize them
-// before comparing against expected words.
+// Edit Distance (Levenshtein) Functions
+// Used to normalize STT transcript words against expected words
 // ─────────────────────────────────────────────────────────────
-const HOMOPHONE_MAP = {
-  // "I" is often heard as "eye" or "aye"
-  eye: "i",
-  aye: "i",
-  ai: "i",
 
-  // "owl" is often heard as "all" or "ole"
-  all: "owl", // only swap when "owl" is in expected — handled below
-  ole: "owl",
+function getEditDistance(a, b) {
+  const dp = Array(a.length + 1)
+    .fill(null)
+    .map(() => Array(b.length + 1).fill(0));
 
-  // other common mishearings
-  their: "there",
-  there: "their",
-  theyre: "they're",
-  its: "it's",
-  "it's": "its",
-  won: "one",
-  to: "too",
-  too: "to",
-  two: "to",
-  no: "know",
-  know: "no",
-  new: "knew",
-  knew: "new",
-  hear: "here",
-  here: "hear",
-  sea: "see",
-  see: "sea",
-  be: "bee",
-  bee: "be",
-  bare: "bear",
-  bear: "bare",
-  by: "bye",
-  bye: "by",
-  buy: "by",
-  for: "four",
-  four: "for",
-};
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] =
+          1 +
+          Math.min(
+            dp[i - 1][j], // delete
+            dp[i][j - 1], // insert
+            dp[i - 1][j - 1], // replace
+          );
+      }
+    }
+  }
+
+  return dp[a.length][b.length];
+}
+
+function isSimilarWord(spoken, expected) {
+  if (spoken === expected) return true;
+
+  const distance = getEditDistance(spoken, expected);
+
+  // Allow small mistakes (1 char difference)
+  // Note: You might want to adjust this for very short words (e.g., length < 3)
+  // to avoid false positives like matching "to" with "do".
+  if (distance <= 1) return true;
+
+  return false;
+}
 
 // ── Normalize a transcript word against the expected word list ──
-// If the spoken word is a homophone of an expected word, swap it.
-function resolveHomophones(spokenWords, expectedWords) {
+// If the spoken word is within the allowed edit distance of an
+// expected word, swap it.
+function resolveSimilarWords(spokenWords, expectedWords) {
   const expectedClean = expectedWords.map((w) =>
     w.replace(/[^a-zA-Z0-9]/g, "").toLowerCase(),
   );
@@ -83,38 +85,26 @@ function resolveHomophones(spokenWords, expectedWords) {
   return spokenWords.map((word) => {
     const clean = word.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 
-    // If the word is already in expected, keep it
-    if (expectedClean.includes(clean)) return word;
+    // Check if the cleaned spoken word is similar to any expected word
+    for (let i = 0; i < expectedClean.length; i++) {
+      if (isSimilarWord(clean, expectedClean[i])) {
+        // Return the expected word to normalize the transcript
+        return expectedClean[i];
+      }
+    }
 
-    // Check if its homophone is in expected
-    const mapped = HOMOPHONE_MAP[clean];
-    if (mapped && expectedClean.includes(mapped)) return mapped;
-
+    // If no similar word is found, return the original spoken word
     return word;
   });
 }
 
 // ─────────────────────────────────────────────────────────────
-// Build a richer hints payload for the STT engine:
+// Build a hints payload for the STT engine:
 //  - the expected words themselves
-//  - known homophones of each expected word
 //  - the full sentence as a phrase hint (helps first-word accuracy)
 // ─────────────────────────────────────────────────────────────
 function buildHints(expectedWords) {
   const hints = [...expectedWords];
-
-  // Add homophones of expected words so the engine considers them
-  const reverseMap = {};
-  Object.entries(HOMOPHONE_MAP).forEach(([spoken, expected]) => {
-    if (!reverseMap[expected]) reverseMap[expected] = [];
-    reverseMap[expected].push(spoken);
-  });
-
-  expectedWords.forEach((word) => {
-    const clean = word.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-    if (reverseMap[clean]) hints.push(...reverseMap[clean]);
-    if (HOMOPHONE_MAP[clean]) hints.push(HOMOPHONE_MAP[clean]);
-  });
 
   // Add the full sentence as a phrase — this significantly helps
   // the engine with first-word recognition and short utterances
@@ -138,7 +128,6 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
   );
 
   // ── Guard: reject recordings that are too short to be valid ──
-  // Anything under ~0.5 seconds is almost always noise or a tap
   if (!fileInfo.exists || (fileInfo.size ?? 0) < 8000) {
     console.log("[speech] recording too short, skipping transcription");
     return { success: false, transcript: null, confidence: 0 };
@@ -164,7 +153,6 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
       audio: base64Audio,
       encoding,
       hints,
-      // Ask the backend to use enhanced model and enable word confidence
       enhanced: true,
     }),
   });
@@ -177,10 +165,10 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
 
   const parsed = JSON.parse(responseText);
 
-  // ── Post-process: resolve homophones in transcript ──────────
+  // ── Post-process: resolve similar words in transcript ──────────
   if (parsed.transcript) {
     const spokenWords = parsed.transcript.trim().split(/\s+/);
-    const resolved = resolveHomophones(spokenWords, expectedWords);
+    const resolved = resolveSimilarWords(spokenWords, expectedWords);
     parsed.transcript = resolved.join(" ");
     console.log("[speech] resolved transcript:", parsed.transcript);
   }
