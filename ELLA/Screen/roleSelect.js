@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import useAppFonts from "../hook/useAppFonts";
 import { useScale } from "../utils/scaling";
+import EllAlert, { useEllAlert } from "../components/Ellalert";
 
 export default function RoleSelect() {
   const navigation = useNavigation();
@@ -22,6 +23,7 @@ export default function RoleSelect() {
   const [role, setRole] = useState(null);
   const fontsLoaded = useAppFonts();
   const { scale, verticalScale } = useScale();
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   if (!fontsLoaded) return null;
 
@@ -39,14 +41,10 @@ export default function RoleSelect() {
     const newCode = generateClassCode();
     const classRef = doc(db, "classes", newCode);
     const docSnap = await getDoc(classRef);
-
-    if (docSnap.exists()) {
-      console.log("Collision detected for code:", newCode, "Retrying...");
-      return await getUniqueClassCode(db);
-    }
-
+    if (docSnap.exists()) return await getUniqueClassCode(db);
     return newCode;
   };
+
   const handleRole = async (selectedRole) => {
     setRole(selectedRole);
     try {
@@ -56,14 +54,8 @@ export default function RoleSelect() {
       const userRef = doc(db, "users", user.uid);
 
       if (selectedRole === "Teacher") {
-        // 1. Get the 8-char string
         const classCode = await getUniqueClassCode(db);
-
-        // 2. Define the Document Reference correctly
-        // Path: classes (collection) -> classCode (document)
         const newClassRef = doc(db, "classes", classCode);
-
-        // 3. Set the data
         batch.set(newClassRef, {
           className: `${user.name}'s Class`,
           code: classCode,
@@ -73,8 +65,6 @@ export default function RoleSelect() {
           students: [],
           bookId: [],
         });
-
-        // 4. Update the Teacher's profile
         batch.update(userRef, {
           role: selectedRole,
           ownedClassId: classCode,
@@ -88,7 +78,11 @@ export default function RoleSelect() {
       navigation.navigate("NameEntry", { userRole: selectedRole });
     } catch (error) {
       console.log("Firebase Path Error:", error);
-      Alert.alert("Error", "Failed to create class path. Please try again.");
+      showAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to create class path. Please try again.",
+      });
     }
   };
 
@@ -120,9 +114,7 @@ export default function RoleSelect() {
           />
         </TouchableOpacity>
         <Text style={s.roleLabel}>Student</Text>
-
         <View style={{ height: verticalScale(60) }} />
-
         <TouchableOpacity
           style={s.roleCircle}
           onPress={() => handleRole("Teacher")}
@@ -135,6 +127,8 @@ export default function RoleSelect() {
         </TouchableOpacity>
         <Text style={s.roleLabel}>Teacher</Text>
       </View>
+
+      <EllAlert config={alertConfig} onClose={closeAlert} />
     </View>
   );
 }

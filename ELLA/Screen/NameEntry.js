@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Modal,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,10 +22,12 @@ import {
 } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
 import CustomSlider from "../components/CustomSlider";
+import EllAlert, { useEllAlert } from "../components/Ellalert";
 
 export default function NameEntry() {
   const navigation = useNavigation();
   const { scale, verticalScale } = useScale();
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const [name, setName] = useState("");
   const [age, setAge] = useState(null);
@@ -57,7 +58,11 @@ export default function NameEntry() {
 
   const handleNameEntry = async () => {
     if (!name.trim()) {
-      Alert.alert("Error!", "Please enter your name!");
+      showAlert({
+        type: "error",
+        title: "Error!",
+        message: "Please enter your name!",
+      });
       return;
     }
 
@@ -65,18 +70,24 @@ export default function NameEntry() {
     try {
       const user = auth.currentUser;
       if (!user) {
-        Alert.alert("Error", "User not logged in");
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "User not logged in",
+        });
         setIsSaving(false);
         return;
       }
 
       const db = getFirestore();
       const userRef = doc(db, "users", user.uid);
-
-      // 1. Get current user data to retrieve the classCode
       const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) {
-        Alert.alert("Error", "User profile not found.");
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "User profile not found.",
+        });
         setIsSaving(false);
         return;
       }
@@ -85,38 +96,26 @@ export default function NameEntry() {
       const batch = writeBatch(db);
       const cleanName = name.trim();
 
-      // 2. Update the User profile with name and age
-      batch.update(userRef, {
-        name: cleanName,
-        age: age,
-      });
+      batch.update(userRef, { name: cleanName, age: age });
 
-      // 3. If Teacher, update their assigned class
       if (userData.role === "Teacher") {
-        const classCode = userData.classCode; // The unique code we saved in RoleSelect
-
+        const classCode = userData.classCode;
         if (classCode) {
           const classRef = doc(db, "classes", classCode);
-
           batch.update(classRef, {
             teacherName: cleanName,
             className: `${cleanName}'s Class`,
           });
-        } else {
-          console.log("No classCode found for this teacher yet.");
         }
       }
 
-      // 4. Commit all changes
       await batch.commit();
-
-      console.log("Name and Class updated successfully for:", cleanName);
       setIsSaving(false);
       navigation.navigate("AvatarSelect");
     } catch (error) {
       console.log("NameEntry Error:", error);
       setIsSaving(false);
-      Alert.alert("Error", error.message);
+      showAlert({ type: "error", title: "Error", message: error.message });
     }
   };
 
@@ -156,7 +155,6 @@ export default function NameEntry() {
       <Text style={s.subtitle}>How old are you?</Text>
       <Text style={s.ageText}>{age ?? "—"}</Text>
 
-      {/* Only render slider once min/max are loaded from Firestore */}
       {low !== null && high !== null && age !== null && (
         <View style={s.sliderContainer}>
           <CustomSlider
@@ -181,6 +179,8 @@ export default function NameEntry() {
         contentFit="fill"
         transition={0}
       />
+
+      <EllAlert config={alertConfig} onClose={closeAlert} />
     </View>
   );
 }
@@ -242,10 +242,7 @@ const getStyles = (scale, verticalScale) =>
       paddingHorizontal: scale(20),
       marginBottom: verticalScale(20),
     },
-    sliderContainer: {
-      width: scale(300),
-      marginTop: verticalScale(10),
-    },
+    sliderContainer: { width: scale(300), marginTop: verticalScale(10) },
     button: {
       backgroundColor: "#FF9149",
       paddingVertical: verticalScale(12),

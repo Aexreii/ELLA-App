@@ -7,7 +7,6 @@ import {
   Animated,
   Modal,
   FlatList,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,15 +22,18 @@ import {
   updateDoc,
   collection,
   getDocs,
+  setDoc,
 } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import EllAlert, { useEllAlert } from "../components/Ellalert";
 
 export default function Prizes() {
   const navigation = useNavigation();
   const route = useRoute();
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const { currUser: initialUser } = route.params || {};
   const [currUser, setCurrUser] = useState(initialUser || {});
@@ -44,8 +46,6 @@ export default function Prizes() {
   const [ownedStickers, setOwnedStickers] = useState(
     currUser?.ownedStickers || [],
   );
-
-  // ── Dynamic sticker state ──────────────────────────────
   const [stickers, setStickers] = useState([]);
   const [loadingStickers, setLoadingStickers] = useState(true);
 
@@ -60,19 +60,21 @@ export default function Prizes() {
       : require("../assets/animations/jump_pink.gif"),
   };
 
-  // ── Fetch stickers from Firestore ──────────────────────
   useEffect(() => {
     const fetchStickers = async () => {
       try {
         const db = getFirestore();
         const snap = await getDocs(collection(db, "stickers"));
         const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        // Sort by cost ascending so cheapest appear first
         data.sort((a, b) => (a.cost ?? 0) - (b.cost ?? 0));
         setStickers(data);
       } catch (e) {
         console.log("Fetch stickers error:", e);
-        Alert.alert("Error", "Failed to load stickers. Please try again.");
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "Failed to load stickers. Please try again.",
+        });
       } finally {
         setLoadingStickers(false);
       }
@@ -106,14 +108,19 @@ export default function Prizes() {
     const stickerCost = selectedSticker.cost ?? 0;
 
     if (currentPoints < stickerCost) {
-      Alert.alert(
-        "Not Enough Points",
-        `You need ${stickerCost} points. You have ${currentPoints}.`,
-      );
+      showAlert({
+        type: "warning",
+        title: "Not Enough Points",
+        message: `You need ${stickerCost} points. You have ${currentPoints}.`,
+      });
       return;
     }
     if (ownedStickers.includes(selectedSticker.id)) {
-      Alert.alert("Already Owned", "You already own this sticker!");
+      showAlert({
+        type: "info",
+        title: "Already Owned",
+        message: "You already own this sticker!",
+      });
       return;
     }
 
@@ -121,7 +128,11 @@ export default function Prizes() {
       setPurchasing(true);
       const user = auth.currentUser;
       if (!user) {
-        Alert.alert("Error", "You must be logged in.");
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "You must be logged in.",
+        });
         return;
       }
 
@@ -137,10 +148,14 @@ export default function Prizes() {
       setCurrUser((prev) => ({ ...prev, points: newPoints }));
       setOwnedStickers(newOwnedStickers);
       setModalVisible(false);
-      Alert.alert("Purchased!", `You got the ${selectedSticker.name}! 🎉`);
+      showAlert({
+        type: "success",
+        title: "Purchased!",
+        message: `You got the ${selectedSticker.name}! 🎉`,
+      });
     } catch (error) {
       console.log("Error buying sticker:", error);
-      Alert.alert("Error", error.message);
+      showAlert({ type: "error", title: "Error", message: error.message });
     } finally {
       setPurchasing(false);
     }
@@ -151,7 +166,6 @@ export default function Prizes() {
   const renderSticker = ({ item }) => {
     const owned = ownedStickers.includes(item.id);
     const stickerCost = item.cost ?? 0;
-
     return (
       <TouchableOpacity
         style={[
@@ -164,17 +178,14 @@ export default function Prizes() {
         }}
         activeOpacity={0.8}
       >
-        {/* Sticker image from Firestore imageUrl */}
         <Image
           source={{ uri: item.imageUrl }}
           style={s.stickerImage}
           contentFit="contain"
         />
-
         <Text style={[s.stickerName, !owned && s.stickerNameLocked]}>
           {item.name}
         </Text>
-
         {owned ? (
           <View style={s.ownedBadge}>
             <Text style={s.ownedBadgeText}>Owned</Text>
@@ -188,7 +199,6 @@ export default function Prizes() {
             <Text style={s.costText}>{stickerCost}</Text>
           </View>
         )}
-
         {!owned && <View style={s.lockedOverlay} />}
       </TouchableOpacity>
     );
@@ -202,7 +212,6 @@ export default function Prizes() {
           characterImages={characterImages}
           onAvatarPress={handleMenuPress}
         />
-
         <Text style={s.sectionTitle}>Sticker Shop</Text>
         <Text style={s.sectionSubtitle}>
           Spend your points on exclusive stickers!
@@ -239,7 +248,6 @@ export default function Prizes() {
           <View style={s.modalContainer}>
             {selectedSticker && (
               <>
-                {/* Show image if owned, blurred placeholder if not */}
                 <View style={s.modalImageWrapper}>
                   {ownedStickers.includes(selectedSticker.id) ? (
                     <Image
@@ -257,12 +265,10 @@ export default function Prizes() {
                     </View>
                   )}
                 </View>
-
                 <Text style={s.modalTitle}>{selectedSticker.name}</Text>
                 <Text style={s.modalDesc}>
                   A fun sticker to show off your achievement!
                 </Text>
-
                 <View style={s.modalCostRow}>
                   <Image
                     source={require("../assets/icons/diamond.png")}
@@ -272,7 +278,6 @@ export default function Prizes() {
                     {selectedSticker.cost ?? 0} points
                   </Text>
                 </View>
-
                 <Text style={s.modalBalance}>
                   Your balance:{" "}
                   <Text
@@ -286,7 +291,6 @@ export default function Prizes() {
                     {currUser?.points ?? 0} points
                   </Text>
                 </Text>
-
                 <View style={s.modalButtons}>
                   <TouchableOpacity
                     style={s.modalCancelButton}
@@ -294,7 +298,6 @@ export default function Prizes() {
                   >
                     <Text style={s.modalCancelText}>Cancel</Text>
                   </TouchableOpacity>
-
                   <TouchableOpacity
                     style={[
                       s.modalBuyButton,
@@ -333,7 +336,6 @@ export default function Prizes() {
         setIsExitDialogOpen={setIsExitDialogOpen}
       />
 
-      {/* ── Footer ── */}
       <View style={s.footer}>
         <TouchableOpacity
           style={s.footerButton}
@@ -352,6 +354,8 @@ export default function Prizes() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      <EllAlert config={alertConfig} onClose={closeAlert} />
     </View>
   );
 }
@@ -365,7 +369,6 @@ const getStyles = (scale, verticalScale) =>
       justifyContent: "flex-start",
       marginBottom: verticalScale(70),
     },
-
     sectionTitle: {
       fontFamily: "Mochi",
       fontSize: scale(24),
@@ -385,7 +388,6 @@ const getStyles = (scale, verticalScale) =>
       marginTop: verticalScale(40),
       textAlign: "center",
     },
-
     stickerGrid: {
       paddingHorizontal: scale(10),
       paddingBottom: verticalScale(20),
@@ -412,14 +414,11 @@ const getStyles = (scale, verticalScale) =>
       bottom: 0,
       backgroundColor: "rgba(180, 180, 180, 0.55)",
     },
-
-    // ── Sticker image (from URL) ──
     stickerImage: {
       width: scale(52),
       height: scale(52),
       marginBottom: verticalScale(4),
     },
-
     stickerName: {
       fontFamily: "Poppins",
       fontSize: scale(10),
@@ -428,7 +427,6 @@ const getStyles = (scale, verticalScale) =>
       paddingHorizontal: scale(4),
     },
     stickerNameLocked: { color: "#aaa" },
-
     costBadge: {
       flexDirection: "row",
       alignItems: "center",
@@ -440,7 +438,6 @@ const getStyles = (scale, verticalScale) =>
     },
     costIcon: { width: scale(10), height: scale(10), marginRight: scale(3) },
     costText: { color: "#fff", fontSize: scale(10), fontFamily: "Poppins" },
-
     ownedBadge: {
       backgroundColor: "#FF9149",
       borderRadius: scale(20),
@@ -453,8 +450,6 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(10),
       fontFamily: "Poppins",
     },
-
-    // ── Modal ──
     modalOverlay: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.5)",
@@ -476,10 +471,7 @@ const getStyles = (scale, verticalScale) =>
       alignItems: "center",
       justifyContent: "center",
     },
-    modalImage: {
-      width: scale(100),
-      height: scale(100),
-    },
+    modalImage: { width: scale(100), height: scale(100) },
     modalImageLocked: {
       width: scale(100),
       height: scale(100),
@@ -547,8 +539,6 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(15),
       color: "#fff",
     },
-
-    // ── Footer ──
     footer: {
       position: "absolute",
       bottom: 0,
