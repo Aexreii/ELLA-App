@@ -22,7 +22,7 @@ import {
 } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
 import CustomSlider from "../components/CustomSlider";
-import EllAlert, { useEllAlert } from "../components/Ellalert";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function NameEntry() {
   const navigation = useNavigation();

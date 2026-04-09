@@ -1090,16 +1090,19 @@ const getStyles = (scale, verticalScale) =>
     readerBox: {
       backgroundColor: "#fff",
       width: "90%",
+      minHeight: verticalScale(150),
       borderRadius: scale(15),
-      padding: scale(10),
+      padding: scale(15),
       borderColor: "#FF9149",
       borderWidth: 2,
       alignItems: "center",
+      justifyContent: "center",
     },
     wordsContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
       justifyContent: "center",
+      padding: scale(5),
     },
     word: {
       fontSize: scale(20),

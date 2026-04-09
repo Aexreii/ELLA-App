@@ -14,7 +14,7 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useScale } from "../utils/scaling";
 import { getFirestore, doc, updateDoc, deleteDoc } from "firebase/firestore";
-import EllAlert, { useEllAlert } from "../components/Ellalert";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function OpenBook({ route, navigation }) {
   const { book: initialBook, currUser } = route.params;

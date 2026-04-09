@@ -26,7 +26,7 @@ import {
 } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import EllAlert, { useEllAlert } from "../components/Ellalert";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function Prizes() {
   const navigation = useNavigation();

@@ -29,7 +29,7 @@ import {
 import { auth } from "../firebase";
 import { useRoute } from "@react-navigation/native";
 import { useScale } from "../utils/scaling";
-import EllAlert, { useEllAlert } from "../components/Ellalert";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 const CLOUDINARY_CLOUD_NAME = "dygbbqapd";
 const CLOUDINARY_UPLOAD_PRESET = "ella_books";

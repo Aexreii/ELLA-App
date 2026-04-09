@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import useAppFonts from "../hook/useAppFonts";
 import { useScale } from "../utils/scaling";
-import EllAlert, { useEllAlert } from "../components/Ellalert";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function RoleSelect() {
   const navigation = useNavigation();
