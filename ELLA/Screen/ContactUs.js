@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Linking,
 } from "react-native";
@@ -21,13 +20,16 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { auth } from "../firebase";
+import EllAlert, { useEllAlert } from "../components/Ellalert";
 
-const GFORM_URL = "https://forms.gle/NHXaP2K9wM2ZoYT18";
+const GFORM_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLScFCtskkZeLfHakWIP9bJEjNF6d3rwkiSMLv6KdZQoq5VoZ5Q/formResponse";
 
 export default function ContactUs() {
   const navigation = useNavigation();
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -37,10 +39,11 @@ export default function ContactUs() {
 
   const handleSend = async () => {
     if (!name.trim() || !email.trim() || !subject.trim() || !comment.trim()) {
-      Alert.alert(
-        "Missing Fields",
-        "Please fill in all fields before sending.",
-      );
+      showAlert({
+        type: "warning",
+        title: "Missing Fields",
+        message: "Please fill in all fields before sending.",
+      });
       return;
     }
 
@@ -56,20 +59,29 @@ export default function ContactUs() {
         createdAt: serverTimestamp(),
       });
 
-      Alert.alert("Thank you!", "Your message has been sent successfully.", [
-        {
-          text: "OK",
-          onPress: () => {
-            setName("");
-            setEmail("");
-            setSubject("");
-            setComment("");
+      showAlert({
+        type: "success",
+        title: "Thank you!",
+        message: "Your message has been sent successfully.",
+        buttons: [
+          {
+            text: "OK",
+            onPress: () => {
+              setName("");
+              setEmail("");
+              setSubject("");
+              setComment("");
+            },
           },
-        },
-      ]);
+        ],
+      });
     } catch (err) {
       console.log("ContactUs send error:", err);
-      Alert.alert("Error", "Failed to send your message. Please try again.");
+      showAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to send your message. Please try again.",
+      });
     } finally {
       setSending(false);
     }
@@ -79,7 +91,6 @@ export default function ContactUs() {
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={s.header}>
         <TouchableOpacity
           style={s.backButton}
@@ -96,14 +107,12 @@ export default function ContactUs() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero */}
         <Text style={s.heroTitle}>We're here to help!</Text>
         <Text style={s.heroSubtitle}>
           Kindly let us know if you have any errors, or recommendations for
           ELLA! You can leave your concerns at the form below.
         </Text>
 
-        {/* Form Card */}
         <View style={s.card}>
           <TextInput
             style={s.input}
@@ -153,11 +162,9 @@ export default function ContactUs() {
           </TouchableOpacity>
         </View>
 
-        {/* Footer contact info */}
         <View style={s.footer}>
           <Text style={s.footerLabel}>You can reach us in email thru:</Text>
           <Text style={s.footerEmail}>ella_contact@gmail.com</Text>
-
           <TouchableOpacity
             style={s.gformLink}
             onPress={() => Linking.openURL(GFORM_URL)}
@@ -175,18 +182,15 @@ export default function ContactUs() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <EllAlert config={alertConfig} onClose={closeAlert} />
     </View>
   );
 }
 
 const getStyles = (scale, verticalScale) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: "#f2f2f2",
-    },
-
-    // ── Header ──
+    container: { flex: 1, backgroundColor: "#f2f2f2" },
     header: {
       flexDirection: "row",
       alignItems: "center",
@@ -207,8 +211,6 @@ const getStyles = (scale, verticalScale) =>
       textAlign: "center",
       flex: 1,
     },
-
-    // ── Content ──
     content: {
       paddingHorizontal: scale(20),
       paddingTop: verticalScale(28),
@@ -231,8 +233,6 @@ const getStyles = (scale, verticalScale) =>
       marginBottom: verticalScale(24),
       paddingHorizontal: scale(8),
     },
-
-    // ── Card ──
     card: {
       backgroundColor: "#fff",
       borderRadius: scale(16),
@@ -256,10 +256,7 @@ const getStyles = (scale, verticalScale) =>
       marginBottom: verticalScale(12),
       backgroundColor: "#fafafa",
     },
-    textArea: {
-      height: verticalScale(100),
-      paddingTop: verticalScale(10),
-    },
+    textArea: { height: verticalScale(100), paddingTop: verticalScale(10) },
     sendButton: {
       backgroundColor: "#FF9149",
       borderRadius: scale(10),
@@ -267,20 +264,13 @@ const getStyles = (scale, verticalScale) =>
       alignItems: "center",
       marginTop: verticalScale(4),
     },
-    sendButtonDisabled: {
-      opacity: 0.6,
-    },
+    sendButtonDisabled: { opacity: 0.6 },
     sendButtonText: {
       fontFamily: "PoppinsBold",
       fontSize: scale(15),
       color: "#fff",
     },
-
-    // ── Footer ──
-    footer: {
-      alignItems: "center",
-      gap: verticalScale(4),
-    },
+    footer: { alignItems: "center", gap: verticalScale(4) },
     footerLabel: {
       fontFamily: "PoppinsBold",
       fontSize: scale(13),

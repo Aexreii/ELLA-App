@@ -5,7 +5,6 @@ import {
   View,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { useState } from "react";
@@ -26,9 +25,11 @@ import {
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+import EllAlert, { useEllAlert } from "../components/Ellart";
 
 export default function StartUp({ navigation }) {
   const { scale, verticalScale } = useScale();
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [showName, setShowName] = useState(true);
@@ -44,22 +45,43 @@ export default function StartUp({ navigation }) {
   // ── Forgot password ────────────────────────────────────────
   const handleForgotPass = async () => {
     if (!email) {
-      Alert.alert("Error", "Please enter your email address first.");
+      showAlert({
+        type: "warning",
+        title: "Enter your email",
+        message:
+          "Type your email address above first, then tap Forgot Password.",
+      });
       return;
     }
     try {
       setIsSubmitting(true);
       await sendPasswordResetEmail(auth, email.trim());
-      Alert.alert(
-        "Password Reset Sent",
-        "Check your inbox for reset instructions.",
-      );
+      showAlert({
+        type: "success",
+        title: "Check your inbox!",
+        message: "We've sent password reset instructions to your email.",
+      });
     } catch (error) {
-      if (error.code === "auth/user-not-found")
-        Alert.alert("Error", "No account found with this email.");
-      else if (error.code === "auth/invalid-email")
-        Alert.alert("Error", "Invalid email address.");
-      else Alert.alert("Error", error.message);
+      if (error.code === "auth/user-not-found") {
+        showAlert({
+          type: "error",
+          title: "Account not found",
+          message: "We couldn't find an account with that email address.",
+        });
+      } else if (error.code === "auth/invalid-email") {
+        showAlert({
+          type: "error",
+          title: "Invalid email",
+          message:
+            "That doesn't look like a valid email address. Please check and try again.",
+        });
+      } else {
+        showAlert({
+          type: "error",
+          title: "Something went wrong",
+          message: error.message,
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -73,7 +95,11 @@ export default function StartUp({ navigation }) {
       return;
     }
     if (!email.trim() || !password) {
-      Alert.alert("Error", "Please enter email and password");
+      showAlert({
+        type: "warning",
+        title: "Missing details",
+        message: "Please enter both your email and password to continue.",
+      });
       return;
     }
     try {
@@ -110,16 +136,50 @@ export default function StartUp({ navigation }) {
     } catch (error) {
       switch (error.code) {
         case "auth/user-not-found":
-          Alert.alert("Error", "No account found with this email");
+          showAlert({
+            type: "error",
+            title: "Account not found",
+            message:
+              "We couldn't find an account with that email. Did you sign up yet?",
+          });
           break;
         case "auth/wrong-password":
-          Alert.alert("Error", "Incorrect password");
+          showAlert({
+            type: "error",
+            title: "Wrong password",
+            message:
+              "That password doesn't match. Try again or use Forgot Password.",
+          });
           break;
         case "auth/invalid-email":
-          Alert.alert("Error", "Invalid email address");
+          showAlert({
+            type: "error",
+            title: "Invalid email",
+            message: "That doesn't look like a valid email address.",
+          });
+          break;
+        case "auth/too-many-requests":
+          showAlert({
+            type: "warning",
+            title: "Too many attempts",
+            message:
+              "Your account is temporarily locked. Reset your password or try again later.",
+          });
+          break;
+        case "auth/invalid-credential":
+          showAlert({
+            type: "error",
+            title: "Incorrect details",
+            message:
+              "Your email or password is incorrect. Please check and try again.",
+          });
           break;
         default:
-          Alert.alert("Error", error.message);
+          showAlert({
+            type: "error",
+            title: "Sign in failed",
+            message: error.message,
+          });
       }
     } finally {
       setEmailLoading(false);
@@ -134,13 +194,9 @@ export default function StartUp({ navigation }) {
       await GoogleSignin.hasPlayServices({
         showPlayServicesUpdateDialog: true,
       });
-
-      // Sign out first to always show account picker
       await GoogleSignin.signOut().catch(() => {});
-
       await GoogleSignin.signIn();
       const { idToken } = await GoogleSignin.getTokens();
-
       if (!idToken) throw new Error("No ID token returned from Google");
 
       const credential = GoogleAuthProvider.credential(idToken);
@@ -174,16 +230,32 @@ export default function StartUp({ navigation }) {
           case statusCodes.SIGN_IN_CANCELLED:
             break; // user dismissed — no alert needed
           case statusCodes.IN_PROGRESS:
-            Alert.alert("Already signing in, please wait.");
+            showAlert({
+              type: "info",
+              title: "Already signing in",
+              message: "Please wait while we finish signing you in.",
+            });
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
-            Alert.alert("Google Play Services not available.");
+            showAlert({
+              type: "error",
+              title: "Google unavailable",
+              message: "Google Play Services isn't available on this device.",
+            });
             break;
           default:
-            Alert.alert("Sign-in Error", error.message);
+            showAlert({
+              type: "error",
+              title: "Sign in failed",
+              message: "Something went wrong. Please try again.",
+            });
         }
       } else {
-        Alert.alert("Sign-in Error", error.message ?? "Something went wrong");
+        showAlert({
+          type: "error",
+          title: "Sign in failed",
+          message: "Something went wrong. Please try again.",
+        });
       }
     } finally {
       setIsSubmitting(false);
@@ -273,6 +345,9 @@ export default function StartUp({ navigation }) {
       </View>
 
       <StatusBar style="auto" />
+
+      {/* ── EllAlert — always last so it renders on top ── */}
+      <EllAlert config={alertConfig} onClose={closeAlert} />
     </View>
   );
 }

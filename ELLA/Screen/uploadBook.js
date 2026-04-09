@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
 } from "react-native";
@@ -30,12 +29,11 @@ import {
 import { auth } from "../firebase";
 import { useRoute } from "@react-navigation/native";
 import { useScale } from "../utils/scaling";
+import EllAlert, { useEllAlert } from "../components/Ellalert";
 
-// ── Cloudinary config ──────────────────────────────────────
 const CLOUDINARY_CLOUD_NAME = "dygbbqapd";
 const CLOUDINARY_UPLOAD_PRESET = "ella_books";
 
-// ── Generate a unique integer bookId ──────────────────────
 const generateBookId = async (db) => {
   let bookId;
   let exists = true;
@@ -47,7 +45,6 @@ const generateBookId = async (db) => {
   return bookId;
 };
 
-// ── Split text into sentences by . ? ! ───────────────────
 const splitSentences = (text) => {
   return text
     .split(/(?<=[.?!])\s+/)
@@ -63,6 +60,7 @@ export default function UploadBook() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { scale, verticalScale } = useScale();
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const [title, setTitle] = useState("");
   const [writer, setWriter] = useState("");
@@ -76,15 +74,15 @@ export default function UploadBook() {
 
   const s = getStyles(scale, verticalScale);
 
-  // ── Pick image from gallery ────────────────────────────
   const pickFromGallery = async () => {
     setShowImageModal(false);
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission needed",
-        "Please allow access to your photo library.",
-      );
+      showAlert({
+        type: "warning",
+        title: "Permission needed",
+        message: "Please allow access to your photo library.",
+      });
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -96,12 +94,15 @@ export default function UploadBook() {
     if (!result.canceled) setCoverUri(result.assets[0].uri);
   };
 
-  // ── Take photo with camera ────────────────────────────
   const pickFromCamera = async () => {
     setShowImageModal(false);
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission needed", "Please allow access to your camera.");
+      showAlert({
+        type: "warning",
+        title: "Permission needed",
+        message: "Please allow access to your camera.",
+      });
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -112,7 +113,6 @@ export default function UploadBook() {
     if (!result.canceled) setCoverUri(result.assets[0].uri);
   };
 
-  // ── Upload image to Cloudinary ────────────────────────
   const uploadToCloudinary = async (uri) => {
     const formData = new FormData();
     formData.append("file", {
@@ -122,7 +122,6 @@ export default function UploadBook() {
     });
     formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
     formData.append("cloud_name", CLOUDINARY_CLOUD_NAME);
-
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
       { method: "POST", body: formData },
@@ -133,22 +132,58 @@ export default function UploadBook() {
   };
 
   const isTeacher = routeUser?.role === "Teacher";
-  // ── Validate and upload book ──────────────────────────
+
   const handleUpload = async () => {
-    if (!title.trim())
-      return Alert.alert("Missing field", "Please enter a book title.");
-    if (!writer.trim())
-      return Alert.alert("Missing field", "Please enter the writer's name.");
-    if (!publisher.trim())
-      return Alert.alert("Missing field", "Please enter a publisher.");
-    if (!contentsText.trim())
-      return Alert.alert("Missing field", "Please write the book contents.");
-    if (!coverUri)
-      return Alert.alert("Missing cover", "Please upload a book cover image.");
+    if (!title.trim()) {
+      showAlert({
+        type: "warning",
+        title: "Missing field",
+        message: "Please enter a book title.",
+      });
+      return;
+    }
+    if (!writer.trim()) {
+      showAlert({
+        type: "warning",
+        title: "Missing field",
+        message: "Please enter the writer's name.",
+      });
+      return;
+    }
+    if (!publisher.trim()) {
+      showAlert({
+        type: "warning",
+        title: "Missing field",
+        message: "Please enter a publisher.",
+      });
+      return;
+    }
+    if (!contentsText.trim()) {
+      showAlert({
+        type: "warning",
+        title: "Missing field",
+        message: "Please write the book contents.",
+      });
+      return;
+    }
+    if (!coverUri) {
+      showAlert({
+        type: "warning",
+        title: "Missing cover",
+        message: "Please upload a book cover image.",
+      });
+      return;
+    }
 
     const sentences = splitSentences(contentsText);
-    if (sentences.length === 0)
-      return Alert.alert("Invalid contents", "No valid sentences found.");
+    if (sentences.length === 0) {
+      showAlert({
+        type: "warning",
+        title: "Invalid contents",
+        message: "No valid sentences found.",
+      });
+      return;
+    }
 
     try {
       setUploading(true);
@@ -156,15 +191,11 @@ export default function UploadBook() {
       const uid = auth.currentUser?.uid;
       if (!uid) throw new Error("Not logged in");
 
-      // Upload cover to Cloudinary
       const coverUrl = await uploadToCloudinary(coverUri);
-
-      // Generate unique bookId
       const bookId = await generateBookId(db);
       const docId = `bookId${bookId}`;
       const bookSource = isTeacher ? "Teacher" : "user";
 
-      // Save to Firestore
       await setDoc(doc(db, "books", docId), {
         bookId,
         title: title.trim(),
@@ -181,19 +212,27 @@ export default function UploadBook() {
       const classesRef = collection(db, "classes");
       const classQuery = query(classesRef, where("teacherID", "==", uid));
       const classSnap = await getDocs(classQuery);
-
       if (!classSnap.empty) {
         await updateDoc(doc(db, "classes", classSnap.docs[0].id), {
           bookId: arrayUnion(bookId),
         });
       }
 
-      Alert.alert("Success!", `"${title}" has been uploaded.`, [
-        { text: "OK", onPress: () => navigation.navigate("HomeScreen") },
-      ]);
+      showAlert({
+        type: "success",
+        title: "Success!",
+        message: `"${title}" has been uploaded.`,
+        buttons: [
+          { text: "OK", onPress: () => navigation.navigate("HomeScreen") },
+        ],
+      });
     } catch (err) {
       console.log("Upload error:", err);
-      Alert.alert("Upload failed", "Something went wrong. Please try again.");
+      showAlert({
+        type: "error",
+        title: "Upload failed",
+        message: "Something went wrong. Please try again.",
+      });
     } finally {
       setUploading(false);
     }
@@ -201,7 +240,6 @@ export default function UploadBook() {
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
-      {/* ── Header ── */}
       <View style={s.header}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={scale(22)} color="#fff" />
@@ -221,7 +259,6 @@ export default function UploadBook() {
         <Text style={s.pageTitle}>Upload Book</Text>
         <Text style={s.pageSubtitle}>Please fill up the fields below</Text>
 
-        {/* ── Cover Image ── */}
         <TouchableOpacity
           style={s.coverPicker}
           onPress={() => setShowImageModal(true)}
@@ -246,7 +283,6 @@ export default function UploadBook() {
           </TouchableOpacity>
         )}
 
-        {/* ── Fields ── */}
         <View style={s.fieldGroup}>
           <Text style={s.label}>Book Title</Text>
           <TextInput
@@ -257,7 +293,6 @@ export default function UploadBook() {
             onChangeText={setTitle}
           />
         </View>
-
         <View style={s.fieldGroup}>
           <Text style={s.label}>Writer Name</Text>
           <TextInput
@@ -268,7 +303,6 @@ export default function UploadBook() {
             onChangeText={setWriter}
           />
         </View>
-
         <View style={s.fieldGroup}>
           <Text style={s.label}>Published By</Text>
           <TextInput
@@ -280,7 +314,6 @@ export default function UploadBook() {
           />
         </View>
 
-        {/* ── Difficulty Picker ── */}
         <View style={s.fieldGroup}>
           <Text style={s.label}>Book Difficulty</Text>
           <TouchableOpacity
@@ -292,7 +325,6 @@ export default function UploadBook() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Contents ── */}
         <View style={s.fieldGroup}>
           <Text style={s.label}>Book Contents</Text>
           <Text style={s.labelHint}>
@@ -316,7 +348,6 @@ export default function UploadBook() {
           )}
         </View>
 
-        {/* ── Upload Button ── */}
         <TouchableOpacity
           style={[s.uploadBtn, uploading && s.uploadBtnDisabled]}
           onPress={handleUpload}
@@ -430,6 +461,8 @@ export default function UploadBook() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <EllAlert config={alertConfig} onClose={closeAlert} />
     </View>
   );
 }
@@ -437,8 +470,6 @@ export default function UploadBook() {
 const getStyles = (scale, verticalScale) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: "#f2f2f2" },
-
-    // ── Header ──
     header: {
       flexDirection: "row",
       alignItems: "center",
@@ -463,8 +494,6 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(11),
       color: "#fff",
     },
-
-    // ── Content ──
     content: {
       alignItems: "center",
       paddingHorizontal: scale(20),
@@ -483,8 +512,6 @@ const getStyles = (scale, verticalScale) =>
       marginBottom: verticalScale(20),
       fontWeight: "bold",
     },
-
-    // ── Cover ──
     coverPicker: {
       width: scale(140),
       height: verticalScale(180),
@@ -495,11 +522,7 @@ const getStyles = (scale, verticalScale) =>
       borderColor: "#60B5FF",
       borderStyle: "dashed",
     },
-    coverPreview: {
-      width: "100%",
-      height: "100%",
-      resizeMode: "cover",
-    },
+    coverPreview: { width: "100%", height: "100%", resizeMode: "cover" },
     coverPlaceholder: {
       flex: 1,
       alignItems: "center",
@@ -514,21 +537,14 @@ const getStyles = (scale, verticalScale) =>
       textAlign: "center",
       paddingHorizontal: scale(8),
     },
-    changeCoverBtn: {
-      marginBottom: verticalScale(16),
-    },
+    changeCoverBtn: { marginBottom: verticalScale(16) },
     changeCoverText: {
       fontFamily: "Poppins",
       fontSize: scale(12),
       color: "#60B5FF",
       textDecorationLine: "underline",
     },
-
-    // ── Fields ──
-    fieldGroup: {
-      width: "100%",
-      marginBottom: verticalScale(14),
-    },
+    fieldGroup: { width: "100%", marginBottom: verticalScale(14) },
     label: {
       fontFamily: "Poppins",
       fontSize: scale(13),
@@ -572,8 +588,6 @@ const getStyles = (scale, verticalScale) =>
       marginTop: verticalScale(4),
       textAlign: "right",
     },
-
-    // ── Difficulty ──
     difficultyBtn: {
       backgroundColor: "#fff",
       borderRadius: scale(10),
@@ -590,8 +604,6 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(13),
       color: "#1a1a2e",
     },
-
-    // ── Upload Button ──
     uploadBtn: {
       flexDirection: "row",
       alignItems: "center",
@@ -602,10 +614,6 @@ const getStyles = (scale, verticalScale) =>
       borderRadius: scale(25),
       marginTop: verticalScale(10),
       elevation: 3,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.15,
-      shadowRadius: 4,
     },
     uploadBtnDisabled: { backgroundColor: "#ffb98a" },
     uploadBtnText: {
@@ -614,8 +622,6 @@ const getStyles = (scale, verticalScale) =>
       color: "#fff",
       fontWeight: "bold",
     },
-
-    // ── Modals ──
     modalOverlay: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.45)",
@@ -647,11 +653,7 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(15),
       color: "#1a1a2e",
     },
-    imageModalDivider: {
-      height: 1,
-      backgroundColor: "#f0f0f0",
-      width: "100%",
-    },
+    imageModalDivider: { height: 1, backgroundColor: "#f0f0f0", width: "100%" },
     imageModalCancel: {
       marginTop: verticalScale(16),
       paddingVertical: verticalScale(8),
@@ -680,16 +682,11 @@ const getStyles = (scale, verticalScale) =>
       paddingHorizontal: scale(8),
       borderRadius: scale(8),
     },
-    difficultyOptionSelected: {
-      backgroundColor: "#fff5ef",
-    },
+    difficultyOptionSelected: { backgroundColor: "#fff5ef" },
     difficultyOptionText: {
       fontFamily: "Poppins",
       fontSize: scale(15),
       color: "#1a1a2e",
     },
-    difficultyOptionTextSelected: {
-      color: "#FF9149",
-      fontWeight: "bold",
-    },
+    difficultyOptionTextSelected: { color: "#FF9149", fontWeight: "bold" },
   });

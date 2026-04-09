@@ -154,8 +154,6 @@ export default function ReadBook({ route, navigation }) {
   const { pauseMusic, resumeMusic, soundVolume, ttsVoice } = useMusic();
   const { scale, verticalScale } = useScale();
 
-  // ── If the user has a custom avatar, pick a random built-in character
-  //    once per screen mount and keep it stable via useRef.
   const avatarSource = useRef(
     currUser?.character === "custom" || !CHARACTER_ASSETS[currUser?.character]
       ? CHARACTER_ASSETS[
@@ -191,7 +189,8 @@ export default function ReadBook({ route, navigation }) {
   const sessionStartRef = useRef(Date.now());
   const wordTapCountsRef = useRef({});
   const sentencesReadRef = useRef(0);
-  const awardedSentencesRef = useRef(new Set());
+  // ── CHANGED: object instead of Set so we can track previously-awarded sentences
+  const awardedSentencesRef = useRef({});
 
   const sentenceWords = book.contents[currentSentence].split(" ");
   const currentWordResults = wordResults[currentSentence];
@@ -236,12 +235,16 @@ export default function ReadBook({ route, navigation }) {
 
         if (savedFlat) {
           const restored = unflattenWordResults(savedFlat, book);
-          setWordResults(restored);
+
+          // ── CHANGED: mark previously completed sentences for half-points,
+          //    then reset all words to null so they can be re-read fresh
           restored.forEach((row, sIndex) => {
             if (row.every((r) => r === "correct")) {
-              awardedSentencesRef.current.add(sIndex);
+              awardedSentencesRef.current[sIndex] = true;
             }
           });
+          const reset = restored.map((row) => row.map(() => null));
+          setWordResults(reset);
         } else {
           const emptyFlat = flattenWordResults(
             book.contents.map((s) => s.split(" ").map(() => null)),
@@ -508,20 +511,27 @@ export default function ReadBook({ route, navigation }) {
     ]).start(() => setShowPointsPop(false));
   };
 
-  const awardPoints = async (sentenceIndex, points = 3) => {
-    if (awardedSentencesRef.current.has(sentenceIndex)) return;
-    awardedSentencesRef.current.add(sentenceIndex);
+  // ── CHANGED: half points if sentence was already completed in a previous session
+  const awardPoints = async (sentenceIndex, points = 10) => {
+    const alreadyAwarded = awardedSentencesRef.current[sentenceIndex] === true;
+    const finalPoints = alreadyAwarded
+      ? Math.max(10, Math.floor(points / 2))
+      : points;
 
-    setLocalPoints((p) => p + points);
-    triggerPointsPop(points);
+    awardedSentencesRef.current[sentenceIndex] = true;
+
+    setLocalPoints((p) => p + finalPoints);
+    triggerPointsPop(finalPoints);
     try {
       const db = getFirestore();
       const uid = auth.currentUser?.uid;
       if (!uid) return;
-      await updateDoc(doc(db, "users", uid), { points: increment(points) });
+      await updateDoc(doc(db, "users", uid), {
+        points: increment(finalPoints),
+      });
       if (sessionIdRef.current) {
         await updateDoc(doc(db, "readingSessions", sessionIdRef.current), {
-          pointsEarned: increment(points),
+          pointsEarned: increment(finalPoints),
         });
       }
     } catch (e) {
@@ -907,7 +917,7 @@ export default function ReadBook({ route, navigation }) {
       </View>
       <Text style={[s.micText, micActive && { color: "#e05555" }]}>
         {micActive ? "Listening..." : "Speak"}
-      </Text>{" "}
+      </Text>
       <Text style={s.hintText}>
         {allWordsCorrect
           ? "All words read! Tap → to continue"
@@ -950,7 +960,6 @@ export default function ReadBook({ route, navigation }) {
           </Animated.View>
         )}
 
-        {/* ── Use the stable avatarSource resolved at mount ── */}
         <Image
           source={avatarSource}
           style={s.avatarImage}

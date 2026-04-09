@@ -8,7 +8,6 @@ import {
   Modal,
   Animated,
   BackHandler,
-  Alert,
   ScrollView,
 } from "react-native";
 import { Image } from "expo-image";
@@ -549,7 +548,7 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "PixelifySans",
       fontSize: scale(16),
       textAlign: "center",
-      color: "#fff",
+      color: "#404040",
     },
     readTextContainer: { alignItems: "center" },
     readText: {
