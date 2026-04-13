@@ -165,7 +165,7 @@ const getStyles = (scale, verticalScale) =>
       justifyContent: "center",
       overflow: "visible",
     },
-    roleGif: { width: scale(45), height: "60%" },
+    roleGif: { width: scale(45), height: "60%", borderRadius: scale(100) },
     roleLabel: {
       fontFamily: "PixelifySans",
       fontSize: scale(24),

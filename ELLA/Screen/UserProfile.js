@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Modal,
 } from "react-native";
@@ -28,6 +27,7 @@ import {
   arrayRemove,
 } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
+import Ellalert, { useEllAlert } from "../components/Ellalert"; // ← import
 
 // ── Cloudinary config ──────────────────────────────────────
 const CLOUDINARY_CLOUD_NAME = "dygbbqapd";
@@ -85,6 +85,9 @@ export default function UserProfile() {
   } = route.params;
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
+
+  // ── Ellalert hook ──
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const isOwnProfile =
     (currUser?.uid ?? currUser?.id) === auth.currentUser?.uid;
@@ -250,7 +253,11 @@ export default function UserProfile() {
     setImageSourceModalVisible(false);
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission needed", "Please allow access to your photos.");
+      showAlert({
+        type: "warning",
+        title: "Permission Needed",
+        message: "Please allow access to your photos.",
+      });
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -269,7 +276,11 @@ export default function UserProfile() {
     setImageSourceModalVisible(false);
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission needed", "Please allow access to your camera.");
+      showAlert({
+        type: "warning",
+        title: "Permission Needed",
+        message: "Please allow access to your camera.",
+      });
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -298,10 +309,18 @@ export default function UserProfile() {
       });
 
       setCustomAvatarUrl(url);
-      Alert.alert("Success!", "Your avatar has been updated.");
+      showAlert({
+        type: "success",
+        title: "Success!",
+        message: "Your avatar has been updated.",
+      });
     } catch (e) {
       console.log("Avatar upload error:", e);
-      Alert.alert("Error", "Failed to upload avatar. Please try again.");
+      showAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to upload avatar. Please try again.",
+      });
     } finally {
       setUploadingAvatar(false);
     }
@@ -317,16 +336,24 @@ export default function UserProfile() {
 
       await updateDoc(doc(db, "users", uid), {
         character: key,
-        customAvatarUrl: null, // clear custom photo
+        customAvatarUrl: null,
       });
 
       setSelectedCharacter(key);
       setCustomAvatarUrl(null);
       setAvatarModalVisible(false);
-      Alert.alert("Avatar updated!", `You selected the ${key} character.`);
+      showAlert({
+        type: "success",
+        title: "Avatar Updated!",
+        message: `You selected the ${key} character.`,
+      });
     } catch (e) {
       console.log("Select avatar error:", e);
-      Alert.alert("Error", "Failed to update avatar. Please try again.");
+      showAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to update avatar. Please try again.",
+      });
     } finally {
       setUploadingAvatar(false);
     }
@@ -340,45 +367,56 @@ export default function UserProfile() {
   // ── Unenroll ───────────────────────────────────────────
   const handleUnenroll = () => {
     if (!enrolledClass) return;
-    Alert.alert("Leave Class", "Are you sure you want to leave the class?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Leave",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            setUnenrolling(true);
-            const db = getFirestore();
-            const uid = auth.currentUser?.uid;
-            if (!uid) return;
-            await updateDoc(doc(db, "classes", enrolledClass.id), {
-              students: arrayRemove(uid),
-            });
-            await updateDoc(doc(db, "users", uid), {
-              classEnrolled: null,
-            });
-            setEnrolledClass(null);
-            Alert.alert("Success", "You have successfully left the class.");
-          } catch (err) {
-            console.log("Unenroll error:", err);
-            Alert.alert(
-              "Error",
-              "Failed to leave the class. Please try again.",
-            );
-          } finally {
-            setUnenrolling(false);
-          }
+    showAlert({
+      type: "confirm",
+      title: "Leave Class",
+      message: "Are you sure you want to leave the class?",
+      buttons: [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setUnenrolling(true);
+              const db = getFirestore();
+              const uid = auth.currentUser?.uid;
+              if (!uid) return;
+              await updateDoc(doc(db, "classes", enrolledClass.id), {
+                students: arrayRemove(uid),
+              });
+              await updateDoc(doc(db, "users", uid), {
+                classEnrolled: null,
+              });
+              setEnrolledClass(null);
+              showAlert({
+                type: "success",
+                title: "Success",
+                message: "You have successfully left the class.",
+              });
+            } catch (err) {
+              console.log("Unenroll error:", err);
+              showAlert({
+                type: "error",
+                title: "Error",
+                message: "Failed to leave the class. Please try again.",
+              });
+            } finally {
+              setUnenrolling(false);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   // ── Remove student ─────────────────────────────────────
   const handleRemoveStudent = () => {
-    Alert.alert(
-      "Remove Student",
-      `Remove ${currUser?.name ?? "this student"} from the class?`,
-      [
+    showAlert({
+      type: "confirm",
+      title: "Remove Student",
+      message: `Remove ${currUser?.name ?? "this student"} from the class?`,
+      buttons: [
         { text: "Cancel", style: "cancel" },
         {
           text: "Remove",
@@ -395,53 +433,73 @@ export default function UserProfile() {
               await updateDoc(doc(db, "users", studentId), {
                 classEnrolled: null,
               });
-              Alert.alert(
-                "Removed",
-                `${currUser?.name ?? "Student"} has been removed from the class.`,
-                [{ text: "OK", onPress: () => navigation.goBack() }],
-              );
+              showAlert({
+                type: "success",
+                title: "Removed",
+                message: `${currUser?.name ?? "Student"} has been removed from the class.`,
+                buttons: [
+                  {
+                    text: "OK",
+                    style: "default",
+                    onPress: () => navigation.goBack(),
+                  },
+                ],
+              });
             } catch (err) {
               console.log("Remove student error:", err);
-              Alert.alert(
-                "Error",
-                "Failed to remove student. Please try again.",
-              );
+              showAlert({
+                type: "error",
+                title: "Error",
+                message: "Failed to remove student. Please try again.",
+              });
             } finally {
               setRemoving(false);
             }
           },
         },
       ],
-    );
+    });
   };
 
   // ── Logout ─────────────────────────────────────────────
-  const handleLogout = async () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            setLoggingOut(true);
-            await signOut(auth);
-            navigation.reset({ index: 0, routes: [{ name: "StartUp" }] });
-          } catch (error) {
-            console.log("Logout error:", error);
-            Alert.alert("Error", "Failed to log out. Please try again.");
-          } finally {
-            setLoggingOut(false);
-          }
+  const handleLogout = () => {
+    showAlert({
+      type: "confirm",
+      title: "Log Out",
+      message: "Are you sure you want to log out?",
+      buttons: [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setLoggingOut(true);
+              await signOut(auth);
+              navigation.reset({ index: 0, routes: [{ name: "StartUp" }] });
+            } catch (error) {
+              console.log("Logout error:", error);
+              showAlert({
+                type: "error",
+                title: "Error",
+                message: "Failed to log out. Please try again.",
+              });
+            } finally {
+              setLoggingOut(false);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   const s = getStyles(scale, verticalScale);
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
+      {/* ── Ellalert ── */}
+      <Ellalert config={alertConfig} onClose={closeAlert} />
+
       {/* ── Header ── */}
       <View style={s.header}>
         <TouchableOpacity

@@ -76,4 +76,4 @@ if __name__ == '__main__':
     print(f"\n🚀 ELLA Backend starting on port {port}...")
     print(f"📱 Ready to accept requests from React Native frontend\n")
     
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    app.run(host='0.0.0.0', port=port, debug=debug) # wis was here

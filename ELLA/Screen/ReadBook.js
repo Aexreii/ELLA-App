@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Modal,
   ActivityIndicator,
   BackHandler,
@@ -36,6 +35,8 @@ import {
   pronounceWord,
 } from "../utils/speechHelper";
 
+import Ellalert, { useEllAlert } from "../components/Ellalert";
+
 // ─────────────────────────────────────────────────────────────
 // Feedback messages
 // ─────────────────────────────────────────────────────────────
@@ -56,14 +57,17 @@ const WRONG_MESSAGES = [
 ];
 
 const VOICE_FILES = {
-  correct_0: require("../assets/sounds/gjob.mp3"),
-  correct_2: require("../assets/sounds/gjob.mp3"),
-  correct_4: require("../assets/sounds/gjob.mp3"),
-  wrong_0: require("../assets/sounds/tagain.mp3"),
-  wrong_1: require("../assets/sounds/tagain.mp3"),
-  wrong_2: require("../assets/sounds/tagain.mp3"),
-  wrong_3: require("../assets/sounds/tagain.mp3"),
-  wrong_4: require("../assets/sounds/tagain.mp3"),
+  correct_0: require("../assets/sounds/1.mp3"),
+  correct_1: require("../assets/sounds/2.mp3"),
+  correct_2: require("../assets/sounds/3.mp3"),
+  correct_3: require("../assets/sounds/4.mp3"),
+  correct_4: require("../assets/sounds/5.mp3"),
+  correct_5: require("../assets/sounds/6.mp3"),
+  wrong_0: require("../assets/sounds/7.mp3"),
+  wrong_1: require("../assets/sounds/8.mp3"),
+  wrong_2: require("../assets/sounds/9.mp3"),
+  wrong_3: require("../assets/sounds/10.mp3"),
+  wrong_4: require("../assets/sounds/11.mp3"),
 };
 
 // Aligns spoken words to expected words using dynamic programming
@@ -154,6 +158,9 @@ export default function ReadBook({ route, navigation }) {
   const { pauseMusic, resumeMusic, soundVolume, ttsVoice } = useMusic();
   const { scale, verticalScale } = useScale();
 
+  // ── Ellalert hook ──
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
+
   const avatarSource = useRef(
     currUser?.character === "custom" || !CHARACTER_ASSETS[currUser?.character]
       ? CHARACTER_ASSETS[
@@ -178,6 +185,10 @@ export default function ReadBook({ route, navigation }) {
 
   const [feedback, setFeedback] = useState(null);
   const feedbackAnim = useRef(new Animated.Value(0)).current;
+
+  // ── Avatar peek animation (slides in from the left) ──
+  const avatarSlideAnim = useRef(new Animated.Value(0)).current;
+
   const feedbackTimer = useRef(null);
   const voiceSoundRef = useRef(null);
 
@@ -189,7 +200,6 @@ export default function ReadBook({ route, navigation }) {
   const sessionStartRef = useRef(Date.now());
   const wordTapCountsRef = useRef({});
   const sentencesReadRef = useRef(0);
-  // ── CHANGED: object instead of Set so we can track previously-awarded sentences
   const awardedSentencesRef = useRef({});
 
   const sentenceWords = book.contents[currentSentence].split(" ");
@@ -197,6 +207,8 @@ export default function ReadBook({ route, navigation }) {
   const allWordsCorrect = currentWordResults.every((r) => r === "correct");
   const isLastSentence = currentSentence === book.contents.length - 1;
   const [isEvaluating, setIsEvaluating] = useState(false);
+
+  const isStoppingRef = useRef(false);
 
   // ─────────────────────────────────────────────────────────
   // 1. Mount: load saved progress then create session
@@ -236,8 +248,6 @@ export default function ReadBook({ route, navigation }) {
         if (savedFlat) {
           const restored = unflattenWordResults(savedFlat, book);
 
-          // ── CHANGED: mark previously completed sentences for half-points,
-          //    then reset all words to null so they can be re-read fresh
           restored.forEach((row, sIndex) => {
             if (row.every((r) => r === "correct")) {
               awardedSentencesRef.current[sIndex] = true;
@@ -343,11 +353,13 @@ export default function ReadBook({ route, navigation }) {
       const progressSnap = await getDoc(progressRef);
 
       if (progressSnap.exists()) {
+        // ── Fix: never un-complete a book once it's marked done ──
+        const alreadyCompleted = progressSnap.data().completed === true;
         batch.update(progressRef, {
           currentSentence: snapshotSentence,
           wordResults: serializedWordResults,
           lastReadAt: serverTimestamp(),
-          completed: isCompleted,
+          completed: alreadyCompleted ? true : isCompleted,
           totalSessions: increment(1),
           totalTimeSeconds: increment(elapsedSeconds),
         });
@@ -426,18 +438,23 @@ export default function ReadBook({ route, navigation }) {
   }, []);
 
   const handleBackPress = () => {
-    Alert.alert("Stop Reading?", "Your progress will be saved.", [
-      { text: "Keep Reading", style: "cancel" },
-      {
-        text: "Exit",
-        style: "destructive",
-        onPress: async () => {
-          await saveAndExit();
-          resumeMusic();
-          navigation.navigate("HomeScreen");
+    showAlert({
+      type: "confirm",
+      title: "Stop Reading?",
+      message: "Your progress will be saved.",
+      buttons: [
+        { text: "Keep Reading", style: "cancel" },
+        {
+          text: "Exit",
+          style: "destructive",
+          onPress: async () => {
+            await saveAndExit();
+            resumeMusic();
+            navigation.navigate("HomeScreen");
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   // ─────────────────────────────────────────────────────────
@@ -458,6 +475,14 @@ export default function ReadBook({ route, navigation }) {
       friction: 9,
     }).start();
 
+    // ── Peek avatar in from the left ──
+    Animated.spring(avatarSlideAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 120,
+      friction: 10,
+    }).start();
+
     const voiceKey = `${type}_${msgIndex}`;
     if (VOICE_FILES[voiceKey]) {
       try {
@@ -470,6 +495,7 @@ export default function ReadBook({ route, navigation }) {
           shouldPlay: false,
         });
         await sound.setVolumeAsync(soundVolume ?? 0.8);
+        await sound.setRateAsync(0.85, true);
         await sound.playAsync();
         voiceSoundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((st) => {
@@ -481,12 +507,20 @@ export default function ReadBook({ route, navigation }) {
     }
 
     feedbackTimer.current = setTimeout(() => {
+      // Fade out bubble
       Animated.timing(feedbackAnim, {
         toValue: 0,
         duration: 200,
         useNativeDriver: true,
       }).start(() => setFeedback(null));
-    }, 500);
+
+      // ── Slide avatar back out to the left ──
+      Animated.timing(avatarSlideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }, 1200);
   };
 
   // ─────────────────────────────────────────────────────────
@@ -511,7 +545,6 @@ export default function ReadBook({ route, navigation }) {
     ]).start(() => setShowPointsPop(false));
   };
 
-  // ── CHANGED: half points if sentence was already completed in a previous session
   const awardPoints = async (sentenceIndex, points = 10) => {
     const alreadyAwarded = awardedSentencesRef.current[sentenceIndex] === true;
     const finalPoints = alreadyAwarded
@@ -540,58 +573,7 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 5. Mark correct
-  // ─────────────────────────────────────────────────────────
-  const handleMarkCorrect = () => {
-    const word = sentenceWords[activeWordIndex];
-    const key = cleanWord(word);
-    wordTapCountsRef.current[key] = (wordTapCountsRef.current[key] ?? 0) + 1;
-
-    const updatedResults = wordResults[currentSentence].map((r, i) =>
-      i === activeWordIndex ? "correct" : r,
-    );
-    const nowAllCorrect = updatedResults.every((r) => r === "correct");
-
-    setWordResults((prev) => {
-      const next = prev.map((s) => [...s]);
-      next[currentSentence] = updatedResults;
-      return next;
-    });
-
-    if (nowAllCorrect) {
-      awardPoints(currentSentence);
-    }
-
-    showFeedback("correct");
-
-    let next = activeWordIndex + 1;
-    while (next < sentenceWords.length && updatedResults[next] === "correct") {
-      next++;
-    }
-    if (next < sentenceWords.length) {
-      setActiveWordIndex(next);
-    }
-  };
-
-  // ─────────────────────────────────────────────────────────
-  // 6. Mark wrong
-  // ─────────────────────────────────────────────────────────
-  const handleMarkWrong = () => {
-    const word = sentenceWords[activeWordIndex];
-    const key = cleanWord(word);
-    wordTapCountsRef.current[key] = (wordTapCountsRef.current[key] ?? 0) + 1;
-
-    setWordResults((prev) => {
-      const next = prev.map((s) => [...s]);
-      next[currentSentence][activeWordIndex] = "wrong";
-      return next;
-    });
-
-    showFeedback("wrong");
-  };
-
-  // ─────────────────────────────────────────────────────────
-  // 7. Tap a word → highlight orange briefly
+  // 5. Tap a word → highlight orange briefly
   // ─────────────────────────────────────────────────────────
   const handleWordPress = async (index) => {
     if (wordResults[currentSentence][index] === "correct") return;
@@ -631,7 +613,7 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 8. Next / Prev
+  // 6. Next / Prev
   // ─────────────────────────────────────────────────────────
   const handleNext = () => {
     if (!allWordsCorrect) return;
@@ -644,16 +626,22 @@ export default function ReadBook({ route, navigation }) {
     if (!isLastSentence) {
       setCurrentSentence((prev) => prev + 1);
     } else {
-      Alert.alert("Great job!", "You've finished reading this book!", [
-        {
-          text: "Done",
-          onPress: async () => {
-            await saveAndExit(true);
-            resumeMusic();
-            navigation.navigate("HomeScreen");
+      showAlert({
+        type: "success",
+        title: "Great job!",
+        message: "You've finished reading this book!",
+        buttons: [
+          {
+            text: "Done",
+            style: "default",
+            onPress: async () => {
+              await saveAndExit(true);
+              resumeMusic();
+              navigation.navigate("HomeScreen");
+            },
           },
-        },
-      ]);
+        ],
+      });
     }
   };
 
@@ -671,18 +659,17 @@ export default function ReadBook({ route, navigation }) {
         recordingTimerRef.current = null;
       }
       setMicActive(false);
-      setIsEvaluating(true);
-
       await stopAndEvaluate();
-      setIsEvaluating(false);
     } else {
+      isStoppingRef.current = false;
       try {
         const { status } = await Audio.requestPermissionsAsync();
         if (status !== "granted") {
-          Alert.alert(
-            "Permission Denied",
-            "Microphone permission is required.",
-          );
+          showAlert({
+            type: "warning",
+            title: "Permission Denied",
+            message: "Microphone permission is required.",
+          });
           return;
         }
         await Audio.setAudioModeAsync({
@@ -702,16 +689,28 @@ export default function ReadBook({ route, navigation }) {
             await stopAndEvaluate();
             setIsEvaluating(false);
           }
-        }, 9000);
+        }, 5000);
       } catch (error) {
-        Alert.alert("Error", "Failed to start recording.");
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "Failed to start recording.",
+        });
       }
     }
   };
 
   const stopAndEvaluate = async () => {
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
+
     setIsEvaluating(true);
     try {
+      if (!recordingRef.current) {
+        console.log("[mic] No active recording to stop");
+        return;
+      }
+
       await recordingRef.current.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
 
@@ -726,7 +725,11 @@ export default function ReadBook({ route, navigation }) {
       const result = await transcribeSentence(uri, remainingWords);
 
       if (!result.success || !result.transcript) {
-        Alert.alert("Could not hear you", "Please try again.");
+        showAlert({
+          type: "warning",
+          title: "Could not hear you",
+          message: "Please try again.",
+        });
         return;
       }
 
@@ -764,12 +767,16 @@ export default function ReadBook({ route, navigation }) {
         showFeedback("wrong");
       }
     } catch (error) {
-      console.log("Mic evaluate error:", error);
-      Alert.alert("Error", "Could not evaluate. Please try again.");
+      showAlert({
+        type: "error",
+        title: "Error",
+        message: "Could not evaluate. Please try again.",
+      });
       setMicActive(false);
       recordingRef.current = null;
     } finally {
       setIsEvaluating(false);
+      isStoppingRef.current = false;
     }
   };
 
@@ -788,6 +795,7 @@ export default function ReadBook({ route, navigation }) {
 
   return (
     <View style={s.container}>
+      {/* ── Saving overlay ── */}
       <Modal transparent visible={isSaving} animationType="fade">
         <View style={s.savingOverlay}>
           <View style={s.savingBox}>
@@ -796,9 +804,14 @@ export default function ReadBook({ route, navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* ── Ellalert ── */}
+      <Ellalert config={alertConfig} onClose={closeAlert} />
+
       <TouchableOpacity style={s.backButton} onPress={handleBackPress}>
         <Ionicons name="arrow-back" size={scale(26)} color="#fff" />
       </TouchableOpacity>
+
       <View style={s.header}>
         <View style={s.headerText}>
           <Text style={s.headerTitle}>ELLA</Text>
@@ -842,9 +855,11 @@ export default function ReadBook({ route, navigation }) {
           )}
         </View>
       </View>
+
       <Text style={s.booktitle}>{book.title}</Text>
       <Text style={s.writer}>By {book.writer}</Text>
       <RNImage source={{ uri: book.cover }} style={s.coverImage} />
+
       <View style={s.readerBox}>
         <View style={s.wordsContainer}>
           {sentenceWords.map((word, index) => {
@@ -875,6 +890,7 @@ export default function ReadBook({ route, navigation }) {
           {currentSentence + 1} / {book.contents.length}
         </Text>
       </View>
+
       <View style={s.controlRow}>
         <TouchableOpacity
           style={[s.navButton, currentSentence === 0 && s.disabled]}
@@ -915,6 +931,7 @@ export default function ReadBook({ route, navigation }) {
           />
         </TouchableOpacity>
       </View>
+
       <Text style={[s.micText, micActive && { color: "#e05555" }]}>
         {micActive ? "Listening..." : "Speak"}
       </Text>
@@ -923,18 +940,37 @@ export default function ReadBook({ route, navigation }) {
           ? "All words read! Tap → to continue"
           : `Tap a word to hear it pronounced`}
       </Text>
-      <View style={s.avatarSection}>
+
+      {/* ── Avatar: peeks in from the left, only head visible ── */}
+      <Animated.View
+        style={[
+          s.avatarSection,
+          {
+            transform: [
+              {
+                translateX: avatarSlideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-scale(70), 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        {/* Speech bubble to the right of the peeking head */}
         {feedback && (
           <Animated.View
             style={[
               s.bubbleWrapper,
               {
                 opacity: feedbackAnim,
+                alignSelf: "center",
+                marginLeft: scale(6),
                 transform: [
                   {
-                    translateY: feedbackAnim.interpolate({
+                    translateX: feedbackAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [12, 0],
+                      outputRange: [-8, 0],
                     }),
                   },
                 ],
@@ -949,6 +985,7 @@ export default function ReadBook({ route, navigation }) {
             >
               <Text style={s.speechText}>{feedback.message}</Text>
             </View>
+            {/* Tail pointing left toward the avatar head */}
             <View
               style={[
                 s.bubbleTail,
@@ -960,12 +997,15 @@ export default function ReadBook({ route, navigation }) {
           </Animated.View>
         )}
 
-        <Image
-          source={avatarSource}
-          style={s.avatarImage}
-          contentFit="contain"
-        />
-      </View>
+        {/* Clip container — only the head portion peeks out */}
+        <View style={s.avatarClip}>
+          <Image
+            source={avatarSource}
+            style={s.avatarImage}
+            contentFit="contain"
+          />
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -1150,22 +1190,6 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Poppins",
       marginTop: scale(2),
     },
-    avatarSection: {
-      position: "absolute",
-      bottom: 0,
-      left: scale(10),
-      alignItems: "flex-start",
-    },
-    bubbleWrapper: {
-      alignItems: "flex-start",
-      marginBottom: scale(2),
-    },
-    speechBubble: {
-      borderRadius: scale(12),
-      paddingHorizontal: scale(12),
-      paddingVertical: verticalScale(7),
-      maxWidth: scale(150),
-    },
     hintText: {
       fontFamily: "Poppins",
       fontSize: scale(16),
@@ -1173,6 +1197,36 @@ const getStyles = (scale, verticalScale) =>
       marginTop: verticalScale(4),
       fontStyle: "italic",
       textAlign: "center",
+    },
+
+    // ── Avatar peek styles ──
+    avatarSection: {
+      position: "absolute",
+      bottom: scale(20),
+      left: 0,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    // Clips the avatar so only the head is visible from the left edge
+    avatarClip: {
+      width: scale(42), // ~60% of avatar width — shows just the head
+      height: scale(65),
+      overflow: "hidden",
+    },
+    avatarImage: {
+      width: scale(65),
+      height: scale(65),
+    },
+
+    // Speech bubble to the right of the head
+    bubbleWrapper: {
+      alignItems: "flex-start",
+    },
+    speechBubble: {
+      borderRadius: scale(12),
+      paddingHorizontal: scale(12),
+      paddingVertical: verticalScale(7),
+      maxWidth: scale(150),
     },
     bubbleCorrect: { backgroundColor: "#4CAF50" },
     bubbleWrong: { backgroundColor: "#E53935" },
@@ -1182,20 +1236,18 @@ const getStyles = (scale, verticalScale) =>
       color: "#fff",
       textAlign: "center",
     },
+    // Small left-pointing tail on the bubble
     bubbleTail: {
       width: 0,
       height: 0,
-      borderLeftWidth: scale(8),
-      borderRightWidth: scale(8),
-      borderTopWidth: scale(9),
-      borderLeftColor: "transparent",
-      borderRightColor: "transparent",
-      marginLeft: scale(18),
+      borderTopWidth: scale(8),
+      borderBottomWidth: scale(8),
+      borderRightWidth: scale(9),
+      borderTopColor: "transparent",
+      borderBottomColor: "transparent",
+      marginTop: -scale(2),
+      marginLeft: scale(4),
     },
-    bubbleTailCorrect: { borderTopColor: "#4CAF50" },
-    bubbleTailWrong: { borderTopColor: "#E53935" },
-    avatarImage: {
-      width: scale(65),
-      height: scale(65),
-    },
+    bubbleTailCorrect: { borderRightColor: "#4CAF50" },
+    bubbleTailWrong: { borderRightColor: "#E53935" },
   });
