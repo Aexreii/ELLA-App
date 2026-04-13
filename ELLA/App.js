@@ -24,22 +24,25 @@ import ManageClass from "./Screen/ManageClass";
 import TeacherBooks from "./Screen/TeacherBooks";
 import UploadBook from "./Screen/uploadBook";
 import AvatarSelect from "./Screen/avatarSelect";
+import ContactUs from "./Screen/ContactUs";
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   const { user, profile, loading } = useAuth();
+  const fontsLoaded = useAppFonts();
 
   useEffect(() => {
-    // ── Configure Google Sign-In once at app startup ──
-    // webClientId: the "Web client (auto created by Google Service)" from
-    // Google Cloud Console → APIs & Services → Credentials
     GoogleSignin.configure({
       webClientId:
         "519631852985-rsq2kspa67ssiaecs2sjlg9g8pkkn27n.apps.googleusercontent.com",
       offlineAccess: false,
     });
   }, []);
+
+  if (!fontsLoaded) {
+    return null; // or a loading screen
+  }
 
   return (
     <MusicProvider>
@@ -53,7 +56,7 @@ export default function App() {
           <Stack.Navigator
             screenOptions={{
               headerShown: false,
-              contentStyle: { backgroundColor: "#fff" },
+              contentStyle: { backgroundColor: "#FFF" },
             }}
           >
             <Stack.Screen name="StartUp" component={StartUp} />
@@ -70,6 +73,7 @@ export default function App() {
             <Stack.Screen name="TeacherBooks" component={TeacherBooks} />
             <Stack.Screen name="UploadBook" component={UploadBook} />
             <Stack.Screen name="AvatarSelect" component={AvatarSelect} />
+            <Stack.Screen name="ContactUs" component={ContactUs} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>

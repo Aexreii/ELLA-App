@@ -7,7 +7,6 @@ import {
   Modal,
   TextInput,
   ScrollView,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { Image as RNImage } from "react-native";
@@ -15,16 +14,15 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useScale } from "../utils/scaling";
 import { getFirestore, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function OpenBook({ route, navigation }) {
   const { book: initialBook, currUser } = route.params;
   const { scale, verticalScale } = useScale();
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
   const s = getStyles(scale, verticalScale);
 
-  // Keep a local copy so edits reflect immediately after save
   const [book, setBook] = useState(initialBook);
-
-  // ── Edit modal state ──────────────────────────────────────
   const [editVisible, setEditVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editFields, setEditFields] = useState({
@@ -33,7 +31,7 @@ export default function OpenBook({ route, navigation }) {
     publisher: book.publisher ?? "",
     difficulty: book.difficulty ?? "",
     cover: book.cover ?? "",
-    contents: book.contents ? book.contents.join("\n") : "", // ← each sentence on its own line
+    contents: book.contents ? book.contents.join("\n") : "",
   });
 
   const handleStartReading = () =>
@@ -53,24 +51,29 @@ export default function OpenBook({ route, navigation }) {
 
   const handleSaveEdit = async () => {
     if (!editFields.title.trim()) {
-      Alert.alert("Validation", "Title cannot be empty.");
+      showAlert({
+        type: "error",
+        title: "Validation",
+        message: "Title cannot be empty.",
+      });
       return;
     }
     if (!editFields.contents.trim()) {
-      Alert.alert("Validation", "Contents cannot be empty.");
+      showAlert({
+        type: "error",
+        title: "Validation",
+        message: "Contents cannot be empty.",
+      });
       return;
     }
     setIsSaving(true);
     try {
       const db = getFirestore();
       const bookRef = doc(db, "books", book.id);
-
-      // Split by newline, trim each line, remove empty lines
       const contentsArray = editFields.contents
         .split("\n")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-
       const updates = {
         title: editFields.title.trim(),
         writer: editFields.writer.trim(),
@@ -82,20 +85,30 @@ export default function OpenBook({ route, navigation }) {
       await updateDoc(bookRef, updates);
       setBook((prev) => ({ ...prev, ...updates }));
       setEditVisible(false);
-      Alert.alert("Saved", "Book details updated successfully.");
+      showAlert({
+        type: "success",
+        title: "Saved",
+        message: "Book details updated successfully.",
+      });
     } catch (error) {
       console.log("Edit book error:", error);
-      Alert.alert("Error", "Failed to save changes. Please try again.");
+      showAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to save changes. Please try again.",
+      });
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDelete = () => {
-    Alert.alert(
-      "Delete Book",
-      "Are you sure you want to delete this book? This cannot be undone.",
-      [
+    showAlert({
+      type: "confirm",
+      title: "Delete Book",
+      message:
+        "Are you sure you want to delete this book? This cannot be undone.",
+      buttons: [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
@@ -104,17 +117,24 @@ export default function OpenBook({ route, navigation }) {
             try {
               const db = getFirestore();
               await deleteDoc(doc(db, "books", book.id));
-              Alert.alert("Deleted", "Book has been deleted.");
-              resumeMusic();
+              showAlert({
+                type: "success",
+                title: "Deleted",
+                message: "Book has been deleted.",
+              });
               navigation.navigate("HomeScreen");
             } catch (error) {
               console.log("Delete book error:", error);
-              Alert.alert("Error", "Failed to delete book. Please try again.");
+              showAlert({
+                type: "error",
+                title: "Error",
+                message: "Failed to delete book. Please try again.",
+              });
             }
           },
         },
       ],
-    );
+    });
   };
 
   return (
@@ -174,8 +194,6 @@ export default function OpenBook({ route, navigation }) {
         ))}
       </View>
 
-      {/* ── Action buttons row ── */}
-      {/* ── Action buttons row ── */}
       <View style={s.buttonRow}>
         <TouchableOpacity style={s.button} onPress={handleStartReading}>
           <Text style={s.buttonText}>Start Reading</Text>
@@ -189,7 +207,6 @@ export default function OpenBook({ route, navigation }) {
               <Ionicons name="pencil" size={scale(18)} color="#fff" />
               <Text style={s.editButtonText}>Edit</Text>
             </TouchableOpacity>
-
             <TouchableOpacity style={s.deleteButton} onPress={handleDelete}>
               <Ionicons name="trash-outline" size={scale(18)} color="#fff" />
               <Text style={s.deleteButtonText}>Delete</Text>
@@ -208,7 +225,6 @@ export default function OpenBook({ route, navigation }) {
         <View style={s.modalOverlay}>
           <View style={s.modalContainer}>
             <Text style={s.modalTitle}>Edit Book</Text>
-
             <ScrollView
               style={{ width: "100%" }}
               showsVerticalScrollIndicator={false}
@@ -228,7 +244,7 @@ export default function OpenBook({ route, navigation }) {
                       s.input,
                       (key === "cover" || key === "contents") && {
                         height: verticalScale(key === "contents" ? 100 : 60),
-                        textAlignVertical: "top", // ← text starts at top on Android
+                        textAlignVertical: "top",
                       },
                     ]}
                     value={editFields[key]}
@@ -243,7 +259,6 @@ export default function OpenBook({ route, navigation }) {
                 </View>
               ))}
             </ScrollView>
-
             <View style={s.modalButtons}>
               <TouchableOpacity
                 style={s.modalCancelButton}
@@ -252,7 +267,6 @@ export default function OpenBook({ route, navigation }) {
               >
                 <Text style={s.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={[s.modalSaveButton, isSaving && { opacity: 0.6 }]}
                 onPress={handleSaveEdit}
@@ -268,6 +282,8 @@ export default function OpenBook({ route, navigation }) {
           </View>
         </View>
       </Modal>
+
+      <EllAlert config={alertConfig} onClose={closeAlert} />
     </View>
   );
 }
@@ -359,12 +375,10 @@ const getStyles = (scale, verticalScale) =>
       color: "#555",
     },
     detailText: { fontFamily: "Poppins", fontSize: scale(12), color: "#000" },
-
-    // ── Button row ──
     buttonRow: {
       flexDirection: "row",
       alignItems: "center",
-      flexWrap: "wrap", // ← wrap if buttons overflow
+      flexWrap: "wrap",
       justifyContent: "center",
       gap: scale(10),
       marginTop: verticalScale(50),
@@ -419,8 +433,6 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(14),
       fontFamily: "PoppinsBold",
     },
-
-    // ── Edit Modal ──
     modalOverlay: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.5)",
@@ -446,10 +458,7 @@ const getStyles = (scale, verticalScale) =>
       color: "#FF9149",
       marginBottom: verticalScale(16),
     },
-    inputGroup: {
-      width: "100%",
-      marginBottom: verticalScale(12),
-    },
+    inputGroup: { width: "100%", marginBottom: verticalScale(12) },
     inputLabel: {
       fontFamily: "PoppinsBold",
       fontSize: scale(12),

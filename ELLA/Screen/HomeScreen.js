@@ -8,7 +8,6 @@ import {
   Modal,
   Animated,
   BackHandler,
-  Alert,
   ScrollView,
 } from "react-native";
 import { Image } from "expo-image";
@@ -49,6 +48,9 @@ export default function HomeScreen() {
     pink: require("../assets/animations/jump_pink.gif"),
     dino: require("../assets/animations/jump_dino.gif"),
     owl: require("../assets/animations/jump_owl.gif"),
+    custom: currUser?.customAvatarUrl
+      ? { uri: currUser.customAvatarUrl }
+      : null,
   };
 
   // ── Derived data ───────────────────────────────────────────
@@ -546,7 +548,7 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "PixelifySans",
       fontSize: scale(16),
       textAlign: "center",
-      color: "#fff",
+      color: "#404040",
     },
     readTextContainer: { alignItems: "center" },
     readText: {
