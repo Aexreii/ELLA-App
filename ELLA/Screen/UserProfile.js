@@ -27,7 +27,7 @@ import {
   arrayRemove,
 } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
-import Ellalert, { useEllAlert } from "../components/Ellalert"; // ← import
+import Ellalert, { useEllAlert } from "../components/Alerts"; // ← import
 
 // ── Cloudinary config ──────────────────────────────────────
 const CLOUDINARY_CLOUD_NAME = "dygbbqapd";

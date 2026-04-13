@@ -35,24 +35,34 @@ import {
   pronounceWord,
 } from "../utils/speechHelper";
 
-import Ellalert, { useEllAlert } from "../components/Ellalert";
+import Ellalert, { useEllAlert } from "../components/Alerts"; // ← import
 
 // ─────────────────────────────────────────────────────────────
 // Feedback messages
 // ─────────────────────────────────────────────────────────────
 const CORRECT_MESSAGES = [
   "Good job!",
+
   "That's right!",
+
   "Well done!",
+
   "Keep it up!",
+
   "Excellent!",
+
   "Perfect!",
 ];
+
 const WRONG_MESSAGES = [
   "Try again!",
+
   "Almost there!",
+
   "Give it another go!",
+
   "Don't give up!",
+
   "Try once more!",
 ];
 
@@ -185,10 +195,6 @@ export default function ReadBook({ route, navigation }) {
 
   const [feedback, setFeedback] = useState(null);
   const feedbackAnim = useRef(new Animated.Value(0)).current;
-
-  // ── Avatar peek animation (slides in from the left) ──
-  const avatarSlideAnim = useRef(new Animated.Value(0)).current;
-
   const feedbackTimer = useRef(null);
   const voiceSoundRef = useRef(null);
 
@@ -353,7 +359,6 @@ export default function ReadBook({ route, navigation }) {
       const progressSnap = await getDoc(progressRef);
 
       if (progressSnap.exists()) {
-        // ── Fix: never un-complete a book once it's marked done ──
         const alreadyCompleted = progressSnap.data().completed === true;
         batch.update(progressRef, {
           currentSentence: snapshotSentence,
@@ -475,14 +480,6 @@ export default function ReadBook({ route, navigation }) {
       friction: 9,
     }).start();
 
-    // ── Peek avatar in from the left ──
-    Animated.spring(avatarSlideAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 120,
-      friction: 10,
-    }).start();
-
     const voiceKey = `${type}_${msgIndex}`;
     if (VOICE_FILES[voiceKey]) {
       try {
@@ -495,7 +492,6 @@ export default function ReadBook({ route, navigation }) {
           shouldPlay: false,
         });
         await sound.setVolumeAsync(soundVolume ?? 0.8);
-        await sound.setRateAsync(0.85, true);
         await sound.playAsync();
         voiceSoundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((st) => {
@@ -507,20 +503,12 @@ export default function ReadBook({ route, navigation }) {
     }
 
     feedbackTimer.current = setTimeout(() => {
-      // Fade out bubble
       Animated.timing(feedbackAnim, {
         toValue: 0,
         duration: 200,
         useNativeDriver: true,
       }).start(() => setFeedback(null));
-
-      // ── Slide avatar back out to the left ──
-      Animated.timing(avatarSlideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }, 1200);
+    }, 500);
   };
 
   // ─────────────────────────────────────────────────────────
@@ -573,7 +561,58 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 5. Tap a word → highlight orange briefly
+  // 5. Mark correct
+  // ─────────────────────────────────────────────────────────
+  const handleMarkCorrect = () => {
+    const word = sentenceWords[activeWordIndex];
+    const key = cleanWord(word);
+    wordTapCountsRef.current[key] = (wordTapCountsRef.current[key] ?? 0) + 1;
+
+    const updatedResults = wordResults[currentSentence].map((r, i) =>
+      i === activeWordIndex ? "correct" : r,
+    );
+    const nowAllCorrect = updatedResults.every((r) => r === "correct");
+
+    setWordResults((prev) => {
+      const next = prev.map((s) => [...s]);
+      next[currentSentence] = updatedResults;
+      return next;
+    });
+
+    if (nowAllCorrect) {
+      awardPoints(currentSentence);
+    }
+
+    showFeedback("correct");
+
+    let next = activeWordIndex + 1;
+    while (next < sentenceWords.length && updatedResults[next] === "correct") {
+      next++;
+    }
+    if (next < sentenceWords.length) {
+      setActiveWordIndex(next);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // 6. Mark wrong
+  // ─────────────────────────────────────────────────────────
+  const handleMarkWrong = () => {
+    const word = sentenceWords[activeWordIndex];
+    const key = cleanWord(word);
+    wordTapCountsRef.current[key] = (wordTapCountsRef.current[key] ?? 0) + 1;
+
+    setWordResults((prev) => {
+      const next = prev.map((s) => [...s]);
+      next[currentSentence][activeWordIndex] = "wrong";
+      return next;
+    });
+
+    showFeedback("wrong");
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // 7. Tap a word → highlight orange briefly
   // ─────────────────────────────────────────────────────────
   const handleWordPress = async (index) => {
     if (wordResults[currentSentence][index] === "correct") return;
@@ -613,7 +652,7 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 6. Next / Prev
+  // 8. Next / Prev
   // ─────────────────────────────────────────────────────────
   const handleNext = () => {
     if (!allWordsCorrect) return;
@@ -811,7 +850,6 @@ export default function ReadBook({ route, navigation }) {
       <TouchableOpacity style={s.backButton} onPress={handleBackPress}>
         <Ionicons name="arrow-back" size={scale(26)} color="#fff" />
       </TouchableOpacity>
-
       <View style={s.header}>
         <View style={s.headerText}>
           <Text style={s.headerTitle}>ELLA</Text>
@@ -855,11 +893,9 @@ export default function ReadBook({ route, navigation }) {
           )}
         </View>
       </View>
-
       <Text style={s.booktitle}>{book.title}</Text>
       <Text style={s.writer}>By {book.writer}</Text>
       <RNImage source={{ uri: book.cover }} style={s.coverImage} />
-
       <View style={s.readerBox}>
         <View style={s.wordsContainer}>
           {sentenceWords.map((word, index) => {
@@ -890,7 +926,6 @@ export default function ReadBook({ route, navigation }) {
           {currentSentence + 1} / {book.contents.length}
         </Text>
       </View>
-
       <View style={s.controlRow}>
         <TouchableOpacity
           style={[s.navButton, currentSentence === 0 && s.disabled]}
@@ -931,7 +966,6 @@ export default function ReadBook({ route, navigation }) {
           />
         </TouchableOpacity>
       </View>
-
       <Text style={[s.micText, micActive && { color: "#e05555" }]}>
         {micActive ? "Listening..." : "Speak"}
       </Text>
@@ -940,37 +974,18 @@ export default function ReadBook({ route, navigation }) {
           ? "All words read! Tap → to continue"
           : `Tap a word to hear it pronounced`}
       </Text>
-
-      {/* ── Avatar: peeks in from the left, only head visible ── */}
-      <Animated.View
-        style={[
-          s.avatarSection,
-          {
-            transform: [
-              {
-                translateX: avatarSlideAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [-scale(70), 0],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        {/* Speech bubble to the right of the peeking head */}
+      <View style={s.avatarSection}>
         {feedback && (
           <Animated.View
             style={[
               s.bubbleWrapper,
               {
                 opacity: feedbackAnim,
-                alignSelf: "center",
-                marginLeft: scale(6),
                 transform: [
                   {
-                    translateX: feedbackAnim.interpolate({
+                    translateY: feedbackAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [-8, 0],
+                      outputRange: [12, 0],
                     }),
                   },
                 ],
@@ -985,7 +1000,6 @@ export default function ReadBook({ route, navigation }) {
             >
               <Text style={s.speechText}>{feedback.message}</Text>
             </View>
-            {/* Tail pointing left toward the avatar head */}
             <View
               style={[
                 s.bubbleTail,
@@ -997,15 +1011,12 @@ export default function ReadBook({ route, navigation }) {
           </Animated.View>
         )}
 
-        {/* Clip container — only the head portion peeks out */}
-        <View style={s.avatarClip}>
-          <Image
-            source={avatarSource}
-            style={s.avatarImage}
-            contentFit="contain"
-          />
-        </View>
-      </Animated.View>
+        <Image
+          source={avatarSource}
+          style={s.avatarImage}
+          contentFit="contain"
+        />
+      </View>
     </View>
   );
 }
@@ -1190,6 +1201,22 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Poppins",
       marginTop: scale(2),
     },
+    avatarSection: {
+      position: "absolute",
+      bottom: 0,
+      left: scale(10),
+      alignItems: "flex-start",
+    },
+    bubbleWrapper: {
+      alignItems: "flex-start",
+      marginBottom: scale(2),
+    },
+    speechBubble: {
+      borderRadius: scale(12),
+      paddingHorizontal: scale(12),
+      paddingVertical: verticalScale(7),
+      maxWidth: scale(150),
+    },
     hintText: {
       fontFamily: "Poppins",
       fontSize: scale(16),
@@ -1197,36 +1224,6 @@ const getStyles = (scale, verticalScale) =>
       marginTop: verticalScale(4),
       fontStyle: "italic",
       textAlign: "center",
-    },
-
-    // ── Avatar peek styles ──
-    avatarSection: {
-      position: "absolute",
-      bottom: scale(20),
-      left: 0,
-      flexDirection: "row",
-      alignItems: "center",
-    },
-    // Clips the avatar so only the head is visible from the left edge
-    avatarClip: {
-      width: scale(42), // ~60% of avatar width — shows just the head
-      height: scale(65),
-      overflow: "hidden",
-    },
-    avatarImage: {
-      width: scale(65),
-      height: scale(65),
-    },
-
-    // Speech bubble to the right of the head
-    bubbleWrapper: {
-      alignItems: "flex-start",
-    },
-    speechBubble: {
-      borderRadius: scale(12),
-      paddingHorizontal: scale(12),
-      paddingVertical: verticalScale(7),
-      maxWidth: scale(150),
     },
     bubbleCorrect: { backgroundColor: "#4CAF50" },
     bubbleWrong: { backgroundColor: "#E53935" },
@@ -1236,18 +1233,20 @@ const getStyles = (scale, verticalScale) =>
       color: "#fff",
       textAlign: "center",
     },
-    // Small left-pointing tail on the bubble
     bubbleTail: {
       width: 0,
       height: 0,
-      borderTopWidth: scale(8),
-      borderBottomWidth: scale(8),
-      borderRightWidth: scale(9),
-      borderTopColor: "transparent",
-      borderBottomColor: "transparent",
-      marginTop: -scale(2),
-      marginLeft: scale(4),
+      borderLeftWidth: scale(8),
+      borderRightWidth: scale(8),
+      borderTopWidth: scale(9),
+      borderLeftColor: "transparent",
+      borderRightColor: "transparent",
+      marginLeft: scale(18),
     },
-    bubbleTailCorrect: { borderRightColor: "#4CAF50" },
-    bubbleTailWrong: { borderRightColor: "#E53935" },
+    bubbleTailCorrect: { borderTopColor: "#4CAF50" },
+    bubbleTailWrong: { borderTopColor: "#E53935" },
+    avatarImage: {
+      width: scale(65),
+      height: scale(65),
+    },
   });

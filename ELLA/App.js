@@ -25,6 +25,7 @@ import TeacherBooks from "./Screen/TeacherBooks";
 import UploadBook from "./Screen/uploadBook";
 import AvatarSelect from "./Screen/avatarSelect";
 import ContactUs from "./Screen/ContactUs";
+import aboutElla from "./Screen/aboutElla";
 
 const Stack = createNativeStackNavigator();
 
@@ -40,9 +41,16 @@ export default function App() {
     });
   }, []);
 
-  if (!fontsLoaded) {
-    return null; // or a loading screen
-  }
+  if (!fontsLoaded || loading) return null;
+
+  // Determine where to land based on auth + profile state
+  const getInitialRoute = () => {
+    if (!user) return "StartUp";
+    if (!profile?.role) return "RoleSelect";
+    if (!profile?.name || !profile?.age) return "NameEntry";
+    if (!profile?.character) return "AvatarSelect";
+    return "HomeScreen";
+  };
 
   return (
     <MusicProvider>
@@ -54,6 +62,7 @@ export default function App() {
         />
         <NavigationContainer>
           <Stack.Navigator
+            initialRouteName={getInitialRoute()}
             screenOptions={{
               headerShown: false,
               contentStyle: { backgroundColor: "#FFF" },
@@ -74,6 +83,7 @@ export default function App() {
             <Stack.Screen name="UploadBook" component={UploadBook} />
             <Stack.Screen name="AvatarSelect" component={AvatarSelect} />
             <Stack.Screen name="ContactUs" component={ContactUs} />
+            <Stack.Screen name="aboutElla" component={aboutElla} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>
