@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
@@ -24,10 +23,12 @@ import {
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function SignUp() {
   const navigation = useNavigation();
   const { scale, verticalScale } = useScale();
+  const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,14 +36,21 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ── Email sign-up ──────────────────────────────────────────
   const handleEmailSignUp = async () => {
     if (!email || !password) {
-      Alert.alert("Error", "Please enter email and password");
+      showAlert({
+        type: "warning",
+        title: "Error",
+        message: "Please enter email and password",
+      });
       return;
     }
     if (password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters");
+      showAlert({
+        type: "warning",
+        title: "Error",
+        message: "Password must be at least 6 characters",
+      });
       return;
     }
     try {
@@ -67,35 +75,46 @@ export default function SignUp() {
         provider: "email",
         classEnrolled: null,
       });
-      Alert.alert("Success", "Account created successfully!");
+      showAlert({
+        type: "success",
+        title: "Success",
+        message: "Account created successfully!",
+      });
       navigation.replace("RoleSelect");
     } catch (error) {
       if (error.code === "auth/email-already-in-use")
-        Alert.alert("Error", "Email is already in use");
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "Email is already in use",
+        });
       else if (error.code === "auth/invalid-email")
-        Alert.alert("Error", "Invalid email address");
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "Invalid email address",
+        });
       else if (error.code === "auth/weak-password")
-        Alert.alert("Error", "Password is too weak");
-      else Alert.alert("Error", error.message);
+        showAlert({
+          type: "error",
+          title: "Error",
+          message: "Password is too weak",
+        });
+      else showAlert({ type: "error", title: "Error", message: error.message });
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Google sign-up ─────────────────────────────────────────
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
       await GoogleSignin.hasPlayServices({
         showPlayServicesUpdateDialog: true,
       });
-
-      // Sign out first so account picker always appears
       await GoogleSignin.signOut().catch(() => {});
-
       await GoogleSignin.signIn();
       const { idToken } = await GoogleSignin.getTokens();
-
       if (!idToken) throw new Error("No ID token returned from Google");
 
       const credential = GoogleAuthProvider.credential(idToken);
@@ -131,16 +150,32 @@ export default function SignUp() {
           case statusCodes.SIGN_IN_CANCELLED:
             break;
           case statusCodes.IN_PROGRESS:
-            Alert.alert("Already signing in, please wait.");
+            showAlert({
+              type: "info",
+              title: "In Progress",
+              message: "Already signing in, please wait.",
+            });
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
-            Alert.alert("Google Play Services not available.");
+            showAlert({
+              type: "error",
+              title: "Unavailable",
+              message: "Google Play Services not available.",
+            });
             break;
           default:
-            Alert.alert("Sign-up Error", error.message);
+            showAlert({
+              type: "error",
+              title: "Sign-up Error",
+              message: error.message,
+            });
         }
       } else {
-        Alert.alert("Sign-up Error", error.message ?? "Something went wrong");
+        showAlert({
+          type: "error",
+          title: "Sign-up Error",
+          message: error.message ?? "Something went wrong",
+        });
       }
     } finally {
       setIsSubmitting(false);
@@ -223,6 +258,8 @@ export default function SignUp() {
         contentFit="fill"
         transition={0}
       />
+
+      <EllAlert config={alertConfig} onClose={closeAlert} />
     </View>
   );
 }

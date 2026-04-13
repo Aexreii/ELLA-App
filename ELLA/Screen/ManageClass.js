@@ -151,7 +151,10 @@ export default function ManageClass() {
                 <View style={s.avatarWrap}>
                   <Image
                     source={
-                      characterImages[student.character] ?? characterImages.pink
+                      student.character === "custom" && student.customAvatarUrl
+                        ? { uri: student.customAvatarUrl }
+                        : (characterImages[student.character] ??
+                          characterImages.pink)
                     }
                     style={s.avatar}
                     contentFit="cover"
