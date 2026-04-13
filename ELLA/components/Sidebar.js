@@ -189,7 +189,7 @@ export default function Sidebar({
             {/* About */}
             <TouchableOpacity
               style={styles.menuButton}
-              onPress={() => console.log("About ELLA pressed")}
+              onPress={() => navigation.navigate("aboutElla")}
             >
               <Ionicons name="people-outline" size={24} color="#333" />
               <Text style={styles.menuButtonText}>About ELLA</Text>

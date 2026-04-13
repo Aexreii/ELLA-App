@@ -8,6 +8,8 @@ import os
 import json
 import struct
 import traceback
+import re  
+from num2words import num2words
 
 
 class SpeechService:
@@ -38,6 +40,17 @@ class SpeechService:
             self.client = None
             self.tts_client = None
 
+    def _normalize_transcript(self, text):
+        """Converts digits like '1' to 'one' and removes hyphens."""
+        if not text:
+            return ""
+        
+        # Finds numbers and converts them to words (e.g., "1" -> "one")
+        # We replace hyphens with spaces because "twenty-one" might fail comparison with "twenty one"
+        text = re.sub(r'\d+', lambda m: num2words(int(m.group(0))), text)
+        return text.replace("-", " ").lower().strip()
+    
+
     def _read_wav_sample_rate(self, audio_content):
         """Read sample rate from WAV header bytes 24-27 (little-endian uint32)."""
         try:
@@ -67,6 +80,8 @@ class SpeechService:
             print(f"   first 8 bytes : {audio_content[:8].hex()}")
             if hints:
                 print(f"   hints: {hints}")
+            
+            
 
             audio = speech.RecognitionAudio(content=audio_content)
 
@@ -80,22 +95,26 @@ class SpeechService:
                     )
                 )
 
+            config_params = {
+                "language_code": language_code,
+                "enable_automatic_punctuation": False,
+                "speech_contexts": speech_contexts,
+            }
+
+
             if encoding == 'MP4':
                 config = speech.RecognitionConfig(
                     encoding=speech.RecognitionConfig.AudioEncoding.MP3,
                     sample_rate_hertz=16000,
-                    language_code=language_code,
-                    enable_automatic_punctuation=False,
                     audio_channel_count=1,
-                    speech_contexts=speech_contexts,
+                    **config_params 
                 )
             else:
                 sample_rate = self._read_wav_sample_rate(audio_content)
                 config = speech.RecognitionConfig(
                     encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
                     sample_rate_hertz=sample_rate,
-                    language_code=language_code,
-                    enable_automatic_punctuation=False,
+                    **config_params,  
                     speech_contexts=speech_contexts,
                 )
 
@@ -110,10 +129,15 @@ class SpeechService:
                 print("⚠️  No results — audio may be silent or too short")
                 return None
 
-            transcript = response.results[0].alternatives[0].transcript
+            raw_transcript = response.results[0].alternatives[0].transcript
             confidence = response.results[0].alternatives[0].confidence
-            print(f"✅ Transcript: {transcript!r}  conf={confidence:.2f}")
-            return {'transcript': transcript.lower().strip(), 'confidence': confidence}
+
+            clean_transcript = self._normalize_transcript(raw_transcript)
+            print(f"✅ Clean Transcript: {clean_transcript!r} (Raw: {raw_transcript!r})")
+            return {
+                'transcript': clean_transcript, 
+                'confidence': confidence
+            }
 
         except Exception as e:
             print(f"❌ Transcription error: {type(e).__name__}: {e}")

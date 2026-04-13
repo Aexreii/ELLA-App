@@ -94,16 +94,11 @@ export default function Ellalert({ config, onClose }) {
           <View style={s.divider} />
 
           {/* ── Buttons ── */}
-          <View
-            style={[
-              s.buttonRow,
-              buttons.length === 1 && { justifyContent: "center" },
-            ]}
-          >
+          {/* ── Buttons ── */}
+          <View style={s.buttonRow}>
             {buttons.map((btn, i) => {
               const isDestructive = btn.style === "destructive";
               const isCancel = btn.style === "cancel";
-              const isLast = i === buttons.length - 1;
 
               return (
                 <TouchableOpacity
@@ -113,8 +108,8 @@ export default function Ellalert({ config, onClose }) {
                     isDestructive && s.buttonDestructive,
                     isCancel && s.buttonCancel,
                     !isDestructive && !isCancel && s.buttonDefault,
-                    buttons.length === 1 && { minWidth: scale(120) },
-                    i < buttons.length - 1 && { marginRight: scale(10) },
+                    // Add margin only if there is a next button
+                    i < buttons.length - 1 && { marginRight: scale(12) },
                   ]}
                   onPress={() => handlePress(btn)}
                   activeOpacity={0.8}
@@ -167,10 +162,8 @@ const getStyles = (scale, verticalScale) =>
     card: {
       backgroundColor: "#fff",
       borderRadius: scale(24),
-      paddingTop: verticalScale(20),
-      paddingBottom: verticalScale(18),
-      paddingHorizontal: scale(18),
-      width: "90%",
+      padding: scale(20),
+      width: "100%",
       alignItems: "center",
       elevation: 12,
       shadowColor: "#000",
@@ -195,8 +188,8 @@ const getStyles = (scale, verticalScale) =>
     },
     message: {
       fontFamily: "Poppins",
-      fontSize: scale(10),
-      color: "#555",
+      fontSize: scale(14),
+      color: "#4b4b4b",
       textAlign: "center",
       lineHeight: scale(22),
       marginBottom: verticalScale(4),
@@ -205,20 +198,9 @@ const getStyles = (scale, verticalScale) =>
       width: "100%",
       height: 1,
       backgroundColor: "#f0f0f0",
-      marginVertical: verticalScale(16),
+      marginVertical: verticalScale(20),
     },
-    buttonRow: {
-      flexDirection: "row",
-      width: "100%",
-      justifyContent: "space-between",
-    },
-    button: {
-      flex: 1,
-      paddingVertical: verticalScale(9),
-      borderRadius: scale(20),
-      alignItems: "center",
-      justifyContent: "center",
-    },
+
     buttonDefault: {
       backgroundColor: "#FF9149",
       borderWidth: 1.5,
@@ -234,9 +216,26 @@ const getStyles = (scale, verticalScale) =>
       borderWidth: 1.5,
       borderColor: "#ddd",
     },
+
+    buttonRow: {
+      flexDirection: "row",
+      width: "100%",
+      justifyContent: "center",
+      alignItems: "center",
+      marginTop: verticalScale(5),
+    },
+    button: {
+      paddingVertical: verticalScale(10),
+      paddingHorizontal: scale(15),
+      borderRadius: scale(20),
+      width: scale(120),
+      alignItems: "center",
+      justifyContent: "center",
+    },
     buttonText: {
       fontFamily: "PoppinsBold",
-      fontSize: scale(16),
+      fontSize: scale(12),
+      textAlign: "center",
     },
     buttonTextDefault: { color: "#fff" },
     buttonTextDestructive: { color: "#fff" },
