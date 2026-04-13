@@ -143,19 +143,35 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
   const encoding = Platform.OS === "android" ? "MP4" : "WAV";
   const hints = buildHints(expectedWords);
 
-  const response = await fetch(`${BACKEND_URL}/api/speech/transcribe`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      audio: base64Audio,
-      encoding,
-      hints,
-      enhanced: true,
-    }),
-  });
+  // ── Fetch with timeout — gracefully handle long recordings ──
+  let response;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30s limit
+
+    response = await fetch(`${BACKEND_URL}/api/speech/transcribe`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        audio: base64Audio,
+        encoding,
+        hints,
+        enhanced: true,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+  } catch (err) {
+    if (err.name === "AbortError") {
+      console.log("[speech] request timed out after 30s");
+      return { success: false, transcript: null, confidence: 0 };
+    }
+    throw err; // re-throw unexpected network errors
+  }
 
   const responseText = await response.text();
   console.log("[speech] server response:", responseText);

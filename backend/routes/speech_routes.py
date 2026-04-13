@@ -186,7 +186,7 @@ def test_pronunciation_file():
 
     except Exception as e:
         print(f"Test pronunciation error: {e}")
-        return jsonify({"success": False, "error": f"Failed: {e}"}), 500
+        return jsonify({"success": False, "error": f"Failed: {e}"}), 8000
 
 
 @speech_bp.route("/test", methods=["GET"])
@@ -199,5 +199,5 @@ def test_speech_api():
                 "info": 'POST to /api/speech/transcribe with { audio: base64, encoding: "MP4" }',
             }
         ),
-        200,
+        8000,
     )
