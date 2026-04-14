@@ -1,9 +1,9 @@
-<<<<<<< HEAD
+
 # ELLA - English Literacy Learning App
 
 A comprehensive reading literacy application designed to help children learn to read through interactive storytelling, speech recognition, and gamified learning experiences.
 
-## 📱 Project Overview
+##  Project Overview
 
 ELLA is a full-stack React Native application with a Flask backend that provides:
 - **Interactive Reading**: Sentence-by-sentence reading with word-by-word pronunciation practice
@@ -13,7 +13,7 @@ ELLA is a full-stack React Native application with a Flask backend that provides
 - **Role-Based Access**: Separate experiences for Students and Teachers
 - **Progress Tracking**: Detailed analytics on reading sessions, accuracy, and performance
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 Reading-Literacy-App-Tutor/
@@ -34,7 +34,7 @@ Reading-Literacy-App-Tutor/
         └── utils/         # Helper utilities
 ```
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
@@ -84,7 +84,6 @@ cp .env.example .env
 python app.py
 ```
 
-Server will start at `http://localhost:5000`
 
 
 ##APK File
