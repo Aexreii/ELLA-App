@@ -7,6 +7,9 @@ import {
   ScrollView,
   ActivityIndicator,
   Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,7 +30,7 @@ import {
   arrayRemove,
 } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
-import Ellalert, { useEllAlert } from "../components/Alerts"; // ← import
+import Ellalert, { useEllAlert } from "../components/Alerts";
 
 // ── Cloudinary config ──────────────────────────────────────
 const CLOUDINARY_CLOUD_NAME = "dygbbqapd";
@@ -53,6 +56,92 @@ function formatTime(seconds) {
   const m = Math.floor((seconds % 3600) / 60);
   if (h > 0) return `${h}hr${h > 1 ? "s" : ""} ${m}mins`;
   return `${m} min${m !== 1 ? "s" : ""}`;
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds === 0) return "0 mins";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  if (m === 0) return `${s}s`;
+  return `${m}m ${s}s`;
+}
+
+function getDayName(dayIndex) {
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dayIndex];
+}
+
+function daysSince(date) {
+  if (!date) return null;
+  const now = new Date();
+  const diff = now - date;
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+function computeStreak(sessions) {
+  if (!sessions || sessions.length === 0) return 0;
+  const dates = sessions
+    .map((s) => {
+      const d = s.startedAt?.toDate
+        ? s.startedAt.toDate()
+        : new Date(s.startedAt);
+      return d.toISOString().slice(0, 10);
+    })
+    .filter(Boolean);
+  const uniqueDates = [...new Set(dates)].sort().reverse();
+  if (uniqueDates.length === 0) return 0;
+
+  let streak = 0;
+  let current = new Date();
+  current.setHours(0, 0, 0, 0);
+
+  for (const dateStr of uniqueDates) {
+    const d = new Date(dateStr);
+    const diff = Math.round((current - d) / (1000 * 60 * 60 * 24));
+    if (diff === 0 || diff === 1) {
+      streak++;
+      current = d;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+function getMostActiveDay(sessions) {
+  if (!sessions || sessions.length === 0) return "—";
+  const counts = [0, 0, 0, 0, 0, 0, 0];
+  sessions.forEach((s) => {
+    const d = s.startedAt?.toDate
+      ? s.startedAt.toDate()
+      : new Date(s.startedAt);
+    if (d) counts[d.getDay()]++;
+  });
+  const maxIdx = counts.indexOf(Math.max(...counts));
+  return getDayName(maxIdx);
+}
+
+function getLastActive(sessions) {
+  if (!sessions || sessions.length === 0) return null;
+  const dates = sessions
+    .map((s) =>
+      s.startedAt?.toDate ? s.startedAt.toDate() : new Date(s.startedAt),
+    )
+    .filter(Boolean);
+  if (dates.length === 0) return null;
+  return new Date(Math.max(...dates.map((d) => d.getTime())));
+}
+
+function getAvgSessionDuration(sessions) {
+  const valid = sessions.filter((s) => s.startedAt && s.endedAt);
+  if (valid.length === 0) return 0;
+  const total = valid.reduce((sum, s) => {
+    const start = s.startedAt?.toDate
+      ? s.startedAt.toDate()
+      : new Date(s.startedAt);
+    const end = s.endedAt?.toDate ? s.endedAt.toDate() : new Date(s.endedAt);
+    return sum + (end - start) / 1000;
+  }, 0);
+  return Math.round(total / valid.length);
 }
 
 // ── Built-in avatar options ────────────────────────────────
@@ -85,8 +174,6 @@ export default function UserProfile() {
   } = route.params;
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
-
-  // ── Ellalert hook ──
   const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const isOwnProfile =
@@ -96,11 +183,21 @@ export default function UserProfile() {
   const [stats, setStats] = useState(null);
   const [enrolledClass, setEnrolledClass] = useState(null);
   const [completedBooks, setCompletedBooks] = useState([]);
+  const [abandonedBooks, setAbandonedBooks] = useState([]);
   const [loggingOut, setLoggingOut] = useState(false);
   const [unenrolling, setUnenrolling] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploadedBooks, setUploadedBooks] = useState([]);
+  const [classAggregates, setClassAggregates] = useState(null);
+  const [classAggLoading, setClassAggLoading] = useState(false);
+  const [activeTeacherTab, setActiveTeacherTab] = useState("overview");
+
+  // ── Name editing state ─────────────────────────────────
+  const [displayName, setDisplayName] = useState(currUser?.name ?? "");
+  const [nameModalVisible, setNameModalVisible] = useState(false);
+  const [editingName, setEditingName] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   // ── Avatar state ───────────────────────────────────────
   const [customAvatarUrl, setCustomAvatarUrl] = useState(
@@ -116,6 +213,138 @@ export default function UserProfile() {
   useEffect(() => {
     fetchStats();
   }, []);
+
+  // ── Fetch class-wide aggregates for teacher ────────────
+  const fetchClassAggregates = async (uid) => {
+    try {
+      setClassAggLoading(true);
+      const db = getFirestore();
+
+      // Get teacher's classes
+      const classesSnap = await getDocs(
+        query(collection(db, "classes"), where("teacherID", "==", uid)),
+      );
+      if (classesSnap.empty) return;
+
+      // Collect all student IDs across all classes
+      let allStudentIds = [];
+      classesSnap.docs.forEach((d) => {
+        const students = d.data().students ?? [];
+        allStudentIds = [...allStudentIds, ...students];
+      });
+      const uniqueStudentIds = [...new Set(allStudentIds)];
+      if (uniqueStudentIds.length === 0) return;
+
+      // Fetch all students' sessions and progress in parallel
+      const sessionsByStudent = {};
+      const progressByStudent = {};
+
+      await Promise.all(
+        uniqueStudentIds.map(async (sid) => {
+          const [sessSnap, progSnap, userSnap] = await Promise.all([
+            getDocs(
+              query(
+                collection(db, "readingSessions"),
+                where("userId", "==", sid),
+              ),
+            ),
+            getDocs(
+              query(collection(db, "userProgress"), where("userId", "==", sid)),
+            ),
+            getDoc(doc(db, "users", sid)),
+          ]);
+          sessionsByStudent[sid] = sessSnap.docs.map((d) => d.data());
+          progressByStudent[sid] = progSnap.docs.map((d) => d.data());
+          progressByStudent[sid]._userData = userSnap.exists()
+            ? userSnap.data()
+            : {};
+        }),
+      );
+
+      // ── Compute aggregates ──────────────────────────────
+      const diffMap = { Easy: 1, Intermediate: 2, Hard: 3 };
+      const levelCounts = { Beginner: 0, Intermediate: 0, Advanced: 0 };
+      let totalBooksCompleted = 0;
+      const bookReadCounts = {};
+      const atRiskStudents = [];
+      let studentsWithData = 0;
+
+      for (const sid of uniqueStudentIds) {
+        const sessions = sessionsByStudent[sid] ?? [];
+        const progress = progressByStudent[sid] ?? [];
+        const userData = progress._userData ?? {};
+
+        // Reading level distribution
+        const level = getReadingLevel(sessions);
+        levelCounts[level] = (levelCounts[level] ?? 0) + 1;
+
+        // Avg books completed
+        const booksCompleted = progress.filter((p) => p.completed).length;
+        totalBooksCompleted += booksCompleted;
+        studentsWithData++;
+
+        // Book popularity
+        progress
+          .filter((p) => p.completed && p.bookId)
+          .forEach((p) => {
+            bookReadCounts[p.bookId] = (bookReadCounts[p.bookId] ?? 0) + 1;
+          });
+
+        // At-risk: hasn't read in 7+ days
+        const lastActive = getLastActive(sessions);
+        const days = lastActive ? daysSince(lastActive) : 999;
+        if (days >= 7) {
+          atRiskStudents.push({
+            id: sid,
+            name: userData.name ?? "Unknown",
+            daysSince: days,
+          });
+        }
+      }
+
+      // Most / least read books
+      const bookEntries = Object.entries(bookReadCounts);
+      let mostReadBook = null;
+      let leastReadBook = null;
+
+      if (bookEntries.length > 0) {
+        bookEntries.sort((a, b) => b[1] - a[1]);
+        const [mostId, mostCount] = bookEntries[0];
+        const [leastId, leastCount] = bookEntries[bookEntries.length - 1];
+
+        const [mostSnap, leastSnap] = await Promise.all([
+          getDoc(doc(db, "books", mostId)),
+          getDoc(doc(db, "books", leastId)),
+        ]);
+        mostReadBook = {
+          title: mostSnap.exists() ? mostSnap.data().title : mostId,
+          count: mostCount,
+        };
+        leastReadBook = {
+          title: leastSnap.exists() ? leastSnap.data().title : leastId,
+          count: leastCount,
+        };
+      }
+
+      setClassAggregates({
+        levelDistribution: levelCounts,
+        avgBooksCompleted:
+          studentsWithData > 0
+            ? (totalBooksCompleted / studentsWithData).toFixed(1)
+            : "0",
+        mostReadBook,
+        leastReadBook,
+        atRiskStudents: atRiskStudents.sort(
+          (a, b) => b.daysSince - a.daysSince,
+        ),
+        totalStudents: uniqueStudentIds.length,
+      });
+    } catch (err) {
+      console.log("Class aggregate error:", err);
+    } finally {
+      setClassAggLoading(false);
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -137,20 +366,38 @@ export default function UserProfile() {
         0,
       );
 
+      // Completed books
       const completedProgressDocs = progressDocs.filter(
         (p) => p.completed && p.bookId,
       );
-      const uniqueBookIds = [
+      const uniqueCompletedBookIds = [
         ...new Set(completedProgressDocs.map((p) => p.bookId)),
       ];
-      if (uniqueBookIds.length > 0) {
+      if (uniqueCompletedBookIds.length > 0) {
         const bookDocs = await Promise.all(
-          uniqueBookIds.map(async (bookId) => {
+          uniqueCompletedBookIds.map(async (bookId) => {
             const snap = await getDoc(doc(db, "books", bookId));
             return snap.exists() ? { id: snap.id, ...snap.data() } : null;
           }),
         );
         setCompletedBooks(bookDocs.filter(Boolean));
+      }
+
+      // Abandoned books (started but not completed)
+      const abandonedProgressDocs = progressDocs.filter(
+        (p) => !p.completed && p.bookId,
+      );
+      const uniqueAbandonedBookIds = [
+        ...new Set(abandonedProgressDocs.map((p) => p.bookId)),
+      ];
+      if (uniqueAbandonedBookIds.length > 0) {
+        const bookDocs = await Promise.all(
+          uniqueAbandonedBookIds.map(async (bookId) => {
+            const snap = await getDoc(doc(db, "books", bookId));
+            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+          }),
+        );
+        setAbandonedBooks(bookDocs.filter(Boolean));
       }
 
       const sessionsSnap = await getDocs(
@@ -162,7 +409,6 @@ export default function UserProfile() {
       const userData = userSnap.data();
       const stickersUnlocked = userData?.ownedStickers?.length ?? 0;
 
-      // Sync latest avatar info from Firestore
       if (userData?.customAvatarUrl !== undefined) {
         setCustomAvatarUrl(userData.customAvatarUrl ?? null);
       }
@@ -185,6 +431,21 @@ export default function UserProfile() {
           }
         }
       }
+
+      // ── Per-student reading behavior stats ────────────
+      const streak = computeStreak(sessionDocs);
+      const mostActiveDay = getMostActiveDay(sessionDocs);
+      const lastActiveDate = getLastActive(sessionDocs);
+      const daysSinceLastSession = lastActiveDate
+        ? daysSince(lastActiveDate)
+        : null;
+      const avgSessionDurationSecs = getAvgSessionDuration(sessionDocs);
+      const sessionsStarted = sessionDocs.length;
+      const sessionsCompleted = sessionDocs.filter((s) => s.completed).length;
+      const engagementRate =
+        sessionsStarted > 0
+          ? Math.round((sessionsCompleted / sessionsStarted) * 100)
+          : 0;
 
       let managedClassCount = 0;
       let booksUploaded = 0;
@@ -210,6 +471,9 @@ export default function UserProfile() {
         setUploadedBooks(
           booksSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
         );
+
+        // Kick off class aggregates fetch
+        fetchClassAggregates(uid);
       }
 
       setStats({
@@ -220,6 +484,16 @@ export default function UserProfile() {
         managedClassCount,
         totalStudents,
         booksUploaded,
+        // Reading behavior
+        streak,
+        mostActiveDay,
+        lastActiveDate,
+        daysSinceLastSession,
+        avgSessionDuration: formatDuration(avgSessionDurationSecs),
+        sessionsStarted,
+        sessionsCompleted,
+        engagementRate,
+        abandonedCount: uniqueAbandonedBookIds.length,
       });
     } catch (error) {
       console.log("Error fetching profile stats:", error);
@@ -238,7 +512,6 @@ export default function UserProfile() {
     });
     formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
     formData.append("cloud_name", CLOUDINARY_CLOUD_NAME);
-
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
       { method: "POST", body: formData },
@@ -248,7 +521,6 @@ export default function UserProfile() {
     return data.secure_url;
   };
 
-  // ── Pick from gallery ──────────────────────────────────
   const pickFromGallery = async () => {
     setImageSourceModalVisible(false);
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -266,12 +538,9 @@ export default function UserProfile() {
       aspect: [1, 1],
       quality: 0.8,
     });
-    if (!result.canceled) {
-      await handleUploadAvatar(result.assets[0].uri);
-    }
+    if (!result.canceled) await handleUploadAvatar(result.assets[0].uri);
   };
 
-  // ── Take photo ─────────────────────────────────────────
   const pickFromCamera = async () => {
     setImageSourceModalVisible(false);
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -288,12 +557,9 @@ export default function UserProfile() {
       aspect: [1, 1],
       quality: 0.8,
     });
-    if (!result.canceled) {
-      await handleUploadAvatar(result.assets[0].uri);
-    }
+    if (!result.canceled) await handleUploadAvatar(result.assets[0].uri);
   };
 
-  // ── Upload and save custom avatar ─────────────────────
   const handleUploadAvatar = async (uri) => {
     setAvatarModalVisible(false);
     try {
@@ -302,12 +568,10 @@ export default function UserProfile() {
       const db = getFirestore();
       const uid = auth.currentUser?.uid;
       if (!uid) return;
-
       await updateDoc(doc(db, "users", uid), {
         customAvatarUrl: url,
         character: "custom",
       });
-
       setCustomAvatarUrl(url);
       showAlert({
         type: "success",
@@ -315,7 +579,6 @@ export default function UserProfile() {
         message: "Your avatar has been updated.",
       });
     } catch (e) {
-      console.log("Avatar upload error:", e);
       showAlert({
         type: "error",
         title: "Error",
@@ -326,19 +589,16 @@ export default function UserProfile() {
     }
   };
 
-  // ── Select a built-in avatar ───────────────────────────
   const handleSelectBuiltinAvatar = async (key) => {
     try {
       setUploadingAvatar(true);
       const db = getFirestore();
       const uid = auth.currentUser?.uid;
       if (!uid) return;
-
       await updateDoc(doc(db, "users", uid), {
         character: key,
         customAvatarUrl: null,
       });
-
       setSelectedCharacter(key);
       setCustomAvatarUrl(null);
       setAvatarModalVisible(false);
@@ -348,7 +608,6 @@ export default function UserProfile() {
         message: `You selected the ${key} character.`,
       });
     } catch (e) {
-      console.log("Select avatar error:", e);
       showAlert({
         type: "error",
         title: "Error",
@@ -359,12 +618,10 @@ export default function UserProfile() {
     }
   };
 
-  // ── Current avatar source ──────────────────────────────
   const currentAvatarSource = customAvatarUrl
     ? { uri: customAvatarUrl }
     : (characterImages?.[selectedCharacter] ?? characterImages?.pink);
 
-  // ── Unenroll ───────────────────────────────────────────
   const handleUnenroll = () => {
     if (!enrolledClass) return;
     showAlert({
@@ -385,9 +642,7 @@ export default function UserProfile() {
               await updateDoc(doc(db, "classes", enrolledClass.id), {
                 students: arrayRemove(uid),
               });
-              await updateDoc(doc(db, "users", uid), {
-                classEnrolled: null,
-              });
+              await updateDoc(doc(db, "users", uid), { classEnrolled: null });
               setEnrolledClass(null);
               showAlert({
                 type: "success",
@@ -395,7 +650,6 @@ export default function UserProfile() {
                 message: "You have successfully left the class.",
               });
             } catch (err) {
-              console.log("Unenroll error:", err);
               showAlert({
                 type: "error",
                 title: "Error",
@@ -410,7 +664,6 @@ export default function UserProfile() {
     });
   };
 
-  // ── Remove student ─────────────────────────────────────
   const handleRemoveStudent = () => {
     showAlert({
       type: "confirm",
@@ -446,7 +699,6 @@ export default function UserProfile() {
                 ],
               });
             } catch (err) {
-              console.log("Remove student error:", err);
               showAlert({
                 type: "error",
                 title: "Error",
@@ -461,7 +713,45 @@ export default function UserProfile() {
     });
   };
 
-  // ── Logout ─────────────────────────────────────────────
+  // ── Save edited name ───────────────────────────────────
+  const handleSaveName = async () => {
+    const trimmed = editingName.trim();
+    if (!trimmed) {
+      showAlert({
+        type: "warning",
+        title: "Invalid Name",
+        message: "Name cannot be empty.",
+      });
+      return;
+    }
+    if (trimmed === displayName) {
+      setNameModalVisible(false);
+      return;
+    }
+    try {
+      setSavingName(true);
+      const db = getFirestore();
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      await updateDoc(doc(db, "users", uid), { name: trimmed });
+      setDisplayName(trimmed);
+      setNameModalVisible(false);
+      showAlert({
+        type: "success",
+        title: "Name Updated!",
+        message: "Your name has been changed.",
+      });
+    } catch (e) {
+      showAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to update name. Please try again.",
+      });
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const handleLogout = () => {
     showAlert({
       type: "confirm",
@@ -478,7 +768,6 @@ export default function UserProfile() {
               await signOut(auth);
               navigation.reset({ index: 0, routes: [{ name: "StartUp" }] });
             } catch (error) {
-              console.log("Logout error:", error);
               showAlert({
                 type: "error",
                 title: "Error",
@@ -495,12 +784,212 @@ export default function UserProfile() {
 
   const s = getStyles(scale, verticalScale);
 
+  // ── Teacher tab content ────────────────────────────────
+  const renderTeacherOverview = () => (
+    <>
+      {/* Quick Stats Row */}
+      <View style={s.quickStatsRow}>
+        <QuickStatCard
+          icon="book-outline"
+          iconColor="#60B5FF"
+          value={String(stats?.booksUploaded ?? 0)}
+          label="Books Uploaded"
+          s={s}
+        />
+        <QuickStatCard
+          icon="people-outline"
+          iconColor="#FF9149"
+          value={String(stats?.totalStudents ?? 0)}
+          label="Students"
+          s={s}
+        />
+      </View>
+
+      {/* Class Aggregates */}
+      <View style={s.sectionCard}>
+        <View style={s.sectionHeader}>
+          <Ionicons name="stats-chart" size={scale(16)} color="#FF9149" />
+          <Text style={s.sectionTitle}>Class Overview</Text>
+        </View>
+        {classAggLoading ? (
+          <ActivityIndicator
+            color="#FF9149"
+            style={{ marginVertical: verticalScale(16) }}
+          />
+        ) : classAggregates ? (
+          <>
+            <StatRow
+              label="Avg Books Completed"
+              value={classAggregates.avgBooksCompleted}
+              s={s}
+            />
+            <StatRow
+              label="Most Read Book"
+              value={
+                classAggregates.mostReadBook
+                  ? `${classAggregates.mostReadBook.title} (${classAggregates.mostReadBook.count}x)`
+                  : "—"
+              }
+              s={s}
+            />
+            <StatRow
+              label="Least Read Book"
+              value={
+                classAggregates.leastReadBook
+                  ? `${classAggregates.leastReadBook.title} (${classAggregates.leastReadBook.count}x)`
+                  : "—"
+              }
+              s={s}
+              last
+            />
+          </>
+        ) : (
+          <Text style={s.noBooks}>No class data available.</Text>
+        )}
+      </View>
+
+      {/* Reading Level Distribution */}
+      <View style={s.sectionCard}>
+        <View style={s.sectionHeader}>
+          <Ionicons name="bar-chart-outline" size={scale(16)} color="#FF9149" />
+          <Text style={s.sectionTitle}>Reading Level Distribution</Text>
+        </View>
+        {classAggLoading ? (
+          <ActivityIndicator
+            color="#FF9149"
+            style={{ marginVertical: verticalScale(16) }}
+          />
+        ) : classAggregates ? (
+          <LevelDistributionBar
+            distribution={classAggregates.levelDistribution}
+            total={classAggregates.totalStudents}
+            s={s}
+            scale={scale}
+            verticalScale={verticalScale}
+          />
+        ) : (
+          <Text style={s.noBooks}>No data available.</Text>
+        )}
+      </View>
+
+      {/* Uploaded Books */}
+      <View style={s.sectionCard}>
+        <View style={s.sectionHeader}>
+          <Ionicons name="library-outline" size={scale(16)} color="#FF9149" />
+          <Text style={s.sectionTitle}>Uploaded Books</Text>
+        </View>
+        {loading ? (
+          <ActivityIndicator
+            color="#FF9149"
+            style={{ marginVertical: verticalScale(16) }}
+          />
+        ) : uploadedBooks.length === 0 ? (
+          <Text style={s.noBooks}>No books uploaded yet. 📚</Text>
+        ) : (
+          uploadedBooks.map((book, i) => (
+            <View
+              key={book.id}
+              style={[
+                s.bookRow,
+                i === uploadedBooks.length - 1 && { borderBottomWidth: 0 },
+              ]}
+            >
+              <View style={s.bookRowLeft}>
+                <Ionicons
+                  name="book-outline"
+                  size={scale(16)}
+                  color="#60B5FF"
+                  style={{ marginRight: scale(10) }}
+                />
+                <Text style={s.bookRowTitle} numberOfLines={2}>
+                  {book.title}
+                </Text>
+              </View>
+              <View
+                style={[
+                  s.difficultyBadge,
+                  {
+                    backgroundColor: getDifficultyColor(book.difficulty) + "22",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    s.difficultyBadgeText,
+                    { color: getDifficultyColor(book.difficulty) },
+                  ]}
+                >
+                  {book.difficulty}
+                </Text>
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+    </>
+  );
+
+  const renderAtRisk = () => (
+    <View style={s.sectionCard}>
+      <View style={s.sectionHeader}>
+        <Ionicons name="warning-outline" size={scale(16)} color="#E53935" />
+        <Text style={[s.sectionTitle, { color: "#E53935" }]}>
+          At-Risk Students
+        </Text>
+      </View>
+      <Text style={s.atRiskSubtitle}>Students inactive for 7+ days</Text>
+      {classAggLoading ? (
+        <ActivityIndicator
+          color="#FF9149"
+          style={{ marginVertical: verticalScale(16) }}
+        />
+      ) : !classAggregates || classAggregates.atRiskStudents.length === 0 ? (
+        <View style={s.allGoodBanner}>
+          <Ionicons name="checkmark-circle" size={scale(28)} color="#4CAF50" />
+          <Text style={s.allGoodText}>All students are active! 🎉</Text>
+        </View>
+      ) : (
+        classAggregates.atRiskStudents.map((student, i) => (
+          <View
+            key={student.id}
+            style={[
+              s.atRiskRow,
+              i === classAggregates.atRiskStudents.length - 1 && {
+                borderBottomWidth: 0,
+              },
+            ]}
+          >
+            <View style={s.atRiskLeft}>
+              <View style={s.atRiskAvatar}>
+                <Text style={s.atRiskAvatarText}>
+                  {(student.name?.[0] ?? "?").toUpperCase()}
+                </Text>
+              </View>
+              <Text style={s.atRiskName}>{student.name}</Text>
+            </View>
+            <View
+              style={[
+                s.atRiskBadge,
+                student.daysSince >= 14 && s.atRiskBadgeSevere,
+              ]}
+            >
+              <Text style={s.atRiskBadgeText}>
+                {student.daysSince === 999
+                  ? "Never"
+                  : `${student.daysSince}d ago`}
+              </Text>
+            </View>
+          </View>
+        ))
+      )}
+    </View>
+  );
+
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
-      {/* ── Ellalert ── */}
       <Ellalert config={alertConfig} onClose={closeAlert} />
 
-      {/* ── Header ── */}
+      {/* Header */}
       <View style={s.header}>
         <TouchableOpacity
           style={s.backButton}
@@ -510,7 +999,7 @@ export default function UserProfile() {
         </TouchableOpacity>
         <Text style={s.headerTitle}>
           {isOwnProfile
-            ? "User Profile"
+            ? "My Profile"
             : `${currUser?.name ?? "Student"}'s Profile`}
         </Text>
         <View style={{ width: scale(40) }} />
@@ -520,10 +1009,7 @@ export default function UserProfile() {
         contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Role badge ── */}
-        <Text style={s.roleBadge}>{currUser?.role}</Text>
-
-        {/* ── Avatar ── */}
+        {/* Avatar */}
         <View style={s.avatarContainer}>
           <View style={s.avatarRing}>
             {uploadingAvatar ? (
@@ -536,8 +1022,6 @@ export default function UserProfile() {
               />
             )}
           </View>
-
-          {/* Only own profile can change avatar */}
           {isOwnProfile && (
             <TouchableOpacity
               style={s.changeAvatarBtn}
@@ -550,200 +1034,351 @@ export default function UserProfile() {
           )}
         </View>
 
-        {/* ── Name & Role ── */}
-        <Text style={s.name}>{currUser?.name}</Text>
-        <Text style={s.role}>{currUser?.role}</Text>
+        <View style={s.nameRow}>
+          <Text style={s.name}>{displayName}</Text>
+          {isOwnProfile && (
+            <TouchableOpacity
+              style={s.editNameBtn}
+              onPress={() => {
+                setEditingName(displayName);
+                setNameModalVisible(true);
+              }}
+            >
+              <Ionicons name="pencil" size={scale(14)} color="#60B5FF" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={s.rolePill}>
+          <Text style={s.rolePillText}>{currUser?.role}</Text>
+        </View>
 
-        {/* ── Class info card ── */}
-        <View style={s.classCard}>
-          {isTeacher ? (
-            <View style={s.classRow}>
-              <Text style={s.classLabel}>Class Code: </Text>
-              <Text style={s.classValue}>{currUser?.classCode ?? "—"}</Text>
+        {/* ── TEACHER VIEW ── */}
+        {isTeacher ? (
+          <>
+            {/* Tab Bar */}
+            <View style={s.tabBar}>
+              {["overview", "at-risk"].map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[
+                    s.tabItem,
+                    activeTeacherTab === tab && s.tabItemActive,
+                  ]}
+                  onPress={() => setActiveTeacherTab(tab)}
+                >
+                  <Text
+                    style={[
+                      s.tabLabel,
+                      activeTeacherTab === tab && s.tabLabelActive,
+                    ]}
+                  >
+                    {tab === "overview" ? "Overview" : "At-Risk"}
+                    {tab === "at-risk" &&
+                      classAggregates?.atRiskStudents?.length > 0 && (
+                        <Text style={s.tabBadge}>
+                          {" "}
+                          {classAggregates.atRiskStudents.length}
+                        </Text>
+                      )}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          ) : loading ? (
-            <View style={s.classRow}>
-              <Text style={s.classLabel}>Enrolled Class: </Text>
+
+            {loading ? (
               <ActivityIndicator
                 color="#FF9149"
-                size="small"
-                style={{ marginLeft: scale(5) }}
+                style={{ marginTop: verticalScale(40) }}
               />
+            ) : activeTeacherTab === "overview" ? (
+              renderTeacherOverview()
+            ) : (
+              renderAtRisk()
+            )}
+          </>
+        ) : (
+          /* ── STUDENT VIEW ── */
+          <>
+            {/* Class info card */}
+            <View style={s.classCard}>
+              {loading ? (
+                <View style={s.classRow}>
+                  <Text style={s.classLabel}>Enrolled Class: </Text>
+                  <ActivityIndicator
+                    color="#FF9149"
+                    size="small"
+                    style={{ marginLeft: scale(5) }}
+                  />
+                </View>
+              ) : enrolledClass ? (
+                <>
+                  <View style={s.classRow}>
+                    <Text style={s.classLabel}>Enrolled Class: </Text>
+                    <Text style={s.classValue}>
+                      {`Ms./Mr. ${enrolledClass.teacherName} (${enrolledClass.code})`}
+                    </Text>
+                  </View>
+                  {isOwnProfile && (
+                    <TouchableOpacity
+                      style={[s.removeButton, unenrolling && { opacity: 0.6 }]}
+                      onPress={handleUnenroll}
+                      disabled={unenrolling}
+                    >
+                      {unenrolling ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={s.removeButtonText}>Leave Class</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                  {isTeacherViewing && (
+                    <TouchableOpacity
+                      style={[s.removeButton, removing && { opacity: 0.6 }]}
+                      onPress={handleRemoveStudent}
+                      disabled={removing}
+                    >
+                      {removing ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={s.removeButtonText}>
+                          Remove from Class
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <View style={s.classRow}>
+                  <Text style={s.classLabel}>Enrolled Class: </Text>
+                  <Text style={s.classValueMuted}>Not enrolled</Text>
+                </View>
+              )}
             </View>
-          ) : enrolledClass ? (
-            <>
-              <View style={s.classRow}>
-                <Text style={s.classLabel}>Enrolled Class: </Text>
-                <Text style={s.classValue}>
-                  {`Ms./Mr. ${enrolledClass.teacherName} (${enrolledClass.code})`}
+
+            {/* Reading Stats */}
+            <View style={s.sectionCard}>
+              <View style={s.sectionHeader}>
+                <Ionicons
+                  name="book-outline"
+                  size={scale(16)}
+                  color="#FF9149"
+                />
+                <Text style={s.sectionTitle}>Reading Statistics</Text>
+              </View>
+              {loading ? (
+                <ActivityIndicator
+                  color="#FF9149"
+                  style={{ marginVertical: verticalScale(20) }}
+                />
+              ) : (
+                <>
+                  <StatRow
+                    label="Books Read"
+                    value={String(stats?.booksRead ?? 0)}
+                    s={s}
+                  />
+                  <StatRow
+                    label="Reading Level"
+                    value={stats?.readingLevel ?? "Beginner"}
+                    s={s}
+                  />
+                  <StatRow
+                    label="Total Reading Time"
+                    value={stats?.readingTime ?? "0 mins"}
+                    s={s}
+                  />
+                  <StatRow
+                    label="Stickers Unlocked"
+                    value={String(stats?.stickersUnlocked ?? 0)}
+                    s={s}
+                    last
+                  />
+                </>
+              )}
+            </View>
+
+            {/* Behavior Stats */}
+            {/* Reading Behavior — teacher only */}
+            {isTeacherViewing && (
+              <View style={s.sectionCard}>
+                <View style={s.sectionHeader}>
+                  <Ionicons
+                    name="pulse-outline"
+                    size={scale(16)}
+                    color="#FF9149"
+                  />
+                  <Text style={s.sectionTitle}>Reading Behavior</Text>
+                </View>
+                {loading ? (
+                  <ActivityIndicator
+                    color="#FF9149"
+                    style={{ marginVertical: verticalScale(20) }}
+                  />
+                ) : (
+                  <>
+                    <StatRow
+                      label="Reading Streak"
+                      value={`🔥 ${stats?.streak ?? 0} day${stats?.streak !== 1 ? "s" : ""}`}
+                      s={s}
+                    />
+                    <StatRow
+                      label="Most Active Day"
+                      value={stats?.mostActiveDay ?? "—"}
+                      s={s}
+                    />
+                    <StatRow
+                      label="Avg Session Duration"
+                      value={stats?.avgSessionDuration ?? "—"}
+                      s={s}
+                    />
+                    <StatRow
+                      label="Engagement Rate"
+                      value={`${stats?.engagementRate ?? 0}% (${stats?.sessionsCompleted ?? 0}/${stats?.sessionsStarted ?? 0})`}
+                      s={s}
+                    />
+                    <StatRow
+                      label="Last Active"
+                      value={
+                        stats?.daysSinceLastSession === null
+                          ? "Never"
+                          : stats?.daysSinceLastSession === 0
+                            ? "Today"
+                            : `${stats?.daysSinceLastSession}d ago`
+                      }
+                      s={s}
+                      last
+                    />
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* Completed Books */}
+
+            <View style={s.sectionCard}>
+              <View style={s.sectionHeader}>
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={scale(16)}
+                  color="#4CAF50"
+                />
+                <Text style={[s.sectionTitle, { color: "#4CAF50" }]}>
+                  Completed Books
                 </Text>
               </View>
-              {isOwnProfile && (
-                <TouchableOpacity
-                  style={[s.removeButton, unenrolling && { opacity: 0.6 }]}
-                  onPress={handleUnenroll}
-                  disabled={unenrolling}
-                >
-                  {unenrolling ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={s.removeButtonText}>Leave Class</Text>
-                  )}
-                </TouchableOpacity>
+              {loading ? (
+                <ActivityIndicator
+                  color="#FF9149"
+                  style={{ marginVertical: verticalScale(16) }}
+                />
+              ) : completedBooks.length === 0 ? (
+                <Text style={s.noBooks}>
+                  No books completed yet. Keep reading! 📖
+                </Text>
+              ) : (
+                completedBooks.map((book, i) => (
+                  <View
+                    key={book.id}
+                    style={[
+                      s.bookRow,
+                      i === completedBooks.length - 1 && {
+                        borderBottomWidth: 0,
+                      },
+                    ]}
+                  >
+                    <View style={s.bookRowLeft}>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={scale(16)}
+                        color="#4CAF50"
+                        style={{ marginRight: scale(10) }}
+                      />
+                      <Text style={s.bookRowTitle} numberOfLines={2}>
+                        {book.title}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        s.difficultyBadge,
+                        {
+                          backgroundColor:
+                            getDifficultyColor(book.difficulty) + "22",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          s.difficultyBadgeText,
+                          { color: getDifficultyColor(book.difficulty) },
+                        ]}
+                      >
+                        {book.difficulty}
+                      </Text>
+                    </View>
+                  </View>
+                ))
               )}
-              {isTeacherViewing && (
-                <TouchableOpacity
-                  style={[s.removeButton, removing && { opacity: 0.6 }]}
-                  onPress={handleRemoveStudent}
-                  disabled={removing}
-                >
-                  {removing ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={s.removeButtonText}>Remove from Class</Text>
-                  )}
-                </TouchableOpacity>
-              )}
-            </>
-          ) : (
-            <View style={s.classRow}>
-              <Text style={s.classLabel}>Enrolled Class: </Text>
-              <Text style={s.classValueMuted}>Not enrolled</Text>
             </View>
-          )}
-        </View>
 
-        {/* ── Reading / Teaching Statistics ── */}
-        <View style={s.statsCard}>
-          <Text style={s.statsTitle}>
-            {isTeacher ? "Teaching Statistics" : "Reading Statistics"}
-          </Text>
-          {loading ? (
-            <ActivityIndicator
-              color="#FF9149"
-              size="small"
-              style={{ marginVertical: verticalScale(20) }}
-            />
-          ) : isTeacher ? (
-            <>
-              <StatRow
-                label="Books Uploaded"
-                value={String(stats?.booksUploaded ?? 0)}
-                s={s}
-              />
-              <StatRow
-                label="Students Handled"
-                value={String(stats?.totalStudents ?? 0)}
-                s={s}
-                last
-              />
-            </>
-          ) : (
-            <>
-              <StatRow
-                label="Number of Books Read"
-                value={String(stats?.booksRead ?? 0)}
-                s={s}
-              />
-              <StatRow
-                label="Reading Level"
-                value={stats?.readingLevel ?? "Beginner"}
-                s={s}
-              />
-              <StatRow
-                label="Stickers Unlocked"
-                value={String(stats?.stickersUnlocked ?? 0)}
-                s={s}
-              />
-              <StatRow
-                label="Reading Time"
-                value={stats?.readingTime ?? "0 mins"}
-                s={s}
-                last
-              />
-            </>
-          )}
-        </View>
-
-        {/* ── Completed / Uploaded Books ── */}
-        {isTeacher ? (
-          <View style={s.statsCard}>
-            <Text style={s.statsTitle}>Uploaded Books</Text>
-            {loading ? (
-              <ActivityIndicator
-                color="#FF9149"
-                size="small"
-                style={{ marginVertical: verticalScale(20) }}
-              />
-            ) : uploadedBooks.length === 0 ? (
-              <Text style={s.noBooks}>No books uploaded yet. 📚</Text>
-            ) : (
-              uploadedBooks.map((book, i) => (
-                <View
-                  key={book.id}
-                  style={[
-                    s.bookRow,
-                    i === uploadedBooks.length - 1 && { borderBottomWidth: 0 },
-                  ]}
-                >
-                  <View style={s.bookRowLeft}>
-                    <Ionicons
-                      name="book-outline"
-                      size={scale(18)}
-                      color="#60B5FF"
-                      style={{ marginRight: scale(10) }}
-                    />
-                    <Text style={s.bookRowTitle} numberOfLines={2}>
-                      {book.title}
-                    </Text>
-                  </View>
-                  <Text style={s.bookRowDifficulty}>{book.difficulty}</Text>
+            {/* Abandoned Books */}
+            {abandonedBooks.length > 0 && (
+              <View style={s.sectionCard}>
+                <View style={s.sectionHeader}>
+                  <Ionicons
+                    name="bookmark-outline"
+                    size={scale(16)}
+                    color="#FF9149"
+                  />
+                  <Text style={s.sectionTitle}>Still Reading</Text>
                 </View>
-              ))
-            )}
-          </View>
-        ) : (
-          <View style={s.statsCard}>
-            <Text style={s.statsTitle}>Completed Books</Text>
-            {loading ? (
-              <ActivityIndicator
-                color="#FF9149"
-                size="small"
-                style={{ marginVertical: verticalScale(20) }}
-              />
-            ) : completedBooks.length === 0 ? (
-              <Text style={s.noBooks}>
-                No books completed yet. Keep reading! 📖
-              </Text>
-            ) : (
-              completedBooks.map((book, i) => (
-                <View
-                  key={book.id}
-                  style={[
-                    s.bookRow,
-                    i === completedBooks.length - 1 && { borderBottomWidth: 0 },
-                  ]}
-                >
-                  <View style={s.bookRowLeft}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={scale(18)}
-                      color="#4CAF50"
-                      style={{ marginRight: scale(10) }}
-                    />
-                    <Text style={s.bookRowTitle} numberOfLines={2}>
-                      {book.title}
-                    </Text>
+                {abandonedBooks.map((book, i) => (
+                  <View
+                    key={book.id}
+                    style={[
+                      s.bookRow,
+                      i === abandonedBooks.length - 1 && {
+                        borderBottomWidth: 0,
+                      },
+                    ]}
+                  >
+                    <View style={s.bookRowLeft}>
+                      <Ionicons
+                        name="time-outline"
+                        size={scale(16)}
+                        color="#FF9149"
+                        style={{ marginRight: scale(10) }}
+                      />
+                      <Text style={s.bookRowTitle} numberOfLines={2}>
+                        {book.title}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        s.difficultyBadge,
+                        {
+                          backgroundColor:
+                            getDifficultyColor(book.difficulty) + "22",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          s.difficultyBadgeText,
+                          { color: getDifficultyColor(book.difficulty) },
+                        ]}
+                      >
+                        {book.difficulty}
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={s.bookRowDifficulty}>{book.difficulty}</Text>
-                </View>
-              ))
+                ))}
+              </View>
             )}
-          </View>
+          </>
         )}
       </ScrollView>
 
-      {/* ── Log Out ── */}
+      {/* Log Out */}
       {isOwnProfile && (
         <View
           style={[
@@ -773,7 +1408,55 @@ export default function UserProfile() {
         </View>
       )}
 
-      {/* ── Avatar Selection Modal ── */}
+      {/* ── Name Edit Modal ── */}
+      <Modal
+        visible={nameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNameModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={s.modalOverlay}
+        >
+          <View style={s.nameModalContainer}>
+            <Text style={s.avatarModalTitle}>Edit Name</Text>
+            <TextInput
+              style={s.nameInput}
+              value={editingName}
+              onChangeText={setEditingName}
+              placeholder="Enter your name"
+              placeholderTextColor="#bbb"
+              maxLength={40}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleSaveName}
+            />
+            <View style={s.nameModalButtons}>
+              <TouchableOpacity
+                style={s.nameModalCancel}
+                onPress={() => setNameModalVisible(false)}
+                disabled={savingName}
+              >
+                <Text style={s.avatarModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.nameModalSave, savingName && { opacity: 0.6 }]}
+                onPress={handleSaveName}
+                disabled={savingName}
+              >
+                {savingName ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={s.nameModalSaveText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Avatar Selection Modal */}
       <Modal
         visible={avatarModalVisible}
         transparent
@@ -783,8 +1466,6 @@ export default function UserProfile() {
         <View style={s.modalOverlay}>
           <View style={s.avatarModalContainer}>
             <Text style={s.avatarModalTitle}>Change Avatar</Text>
-
-            {/* Upload photo option */}
             <TouchableOpacity
               style={s.uploadPhotoBtn}
               onPress={() => {
@@ -800,10 +1481,7 @@ export default function UserProfile() {
               />
               <Text style={s.uploadPhotoBtnText}>Upload Your Photo</Text>
             </TouchableOpacity>
-
             <Text style={s.avatarOrText}>— or choose a character —</Text>
-
-            {/* Built-in avatar row */}
             <View style={s.builtinAvatarRow}>
               {BUILTIN_AVATARS.map((av) => {
                 const isSelected =
@@ -836,7 +1514,6 @@ export default function UserProfile() {
                 );
               })}
             </View>
-
             <TouchableOpacity
               style={s.avatarModalCancel}
               onPress={() => setAvatarModalVisible(false)}
@@ -847,7 +1524,7 @@ export default function UserProfile() {
         </View>
       </Modal>
 
-      {/* ── Image Source Modal (Camera / Gallery) ── */}
+      {/* Image Source Modal */}
       <Modal
         visible={imageSourceModalVisible}
         transparent
@@ -861,7 +1538,6 @@ export default function UserProfile() {
         >
           <View style={s.imageSourceContainer}>
             <Text style={s.avatarModalTitle}>Upload From</Text>
-
             <TouchableOpacity
               style={s.imageSourceOption}
               onPress={pickFromGallery}
@@ -873,9 +1549,7 @@ export default function UserProfile() {
               />
               <Text style={s.imageSourceOptionText}>Photo Gallery</Text>
             </TouchableOpacity>
-
             <View style={s.imageSourceDivider} />
-
             <TouchableOpacity
               style={s.imageSourceOption}
               onPress={pickFromCamera}
@@ -887,7 +1561,6 @@ export default function UserProfile() {
               />
               <Text style={s.imageSourceOptionText}>Camera</Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               style={s.avatarModalCancel}
               onPress={() => setImageSourceModalVisible(false)}
@@ -901,7 +1574,8 @@ export default function UserProfile() {
   );
 }
 
-// ── Reusable stat row ──────────────────────────────────────
+// ── Helper components ─────────────────────────────────────
+
 function StatRow({ label, value, s, last = false }) {
   return (
     <View style={[s.statRow, last && { borderBottomWidth: 0 }]}>
@@ -911,9 +1585,72 @@ function StatRow({ label, value, s, last = false }) {
   );
 }
 
+function QuickStatCard({ icon, iconColor, value, label, s }) {
+  return (
+    <View style={s.quickStatCard}>
+      <Ionicons name={icon} size={22} color={iconColor} />
+      <Text style={s.quickStatValue}>{value}</Text>
+      <Text style={s.quickStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function LevelDistributionBar({
+  distribution,
+  total,
+  s,
+  scale,
+  verticalScale,
+}) {
+  const levels = [
+    { key: "Beginner", color: "#60B5FF" },
+    { key: "Intermediate", color: "#FF9149" },
+    { key: "Advanced", color: "#4CAF50" },
+  ];
+  return (
+    <View>
+      {levels.map((lv) => {
+        const count = distribution[lv.key] ?? 0;
+        const pct = total > 0 ? (count / total) * 100 : 0;
+        return (
+          <View key={lv.key} style={{ marginBottom: verticalScale(10) }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginBottom: 4,
+              }}
+            >
+              <Text style={s.statLabel}>{lv.key}</Text>
+              <Text style={s.statValue}>
+                {count} student{count !== 1 ? "s" : ""}
+              </Text>
+            </View>
+            <View style={s.barTrack}>
+              <View
+                style={[
+                  s.barFill,
+                  { width: `${pct}%`, backgroundColor: lv.color },
+                ]}
+              />
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function getDifficultyColor(difficulty) {
+  if (difficulty === "Easy") return "#4CAF50";
+  if (difficulty === "Hard") return "#E53935";
+  return "#FF9149";
+}
+
+// ── Styles ────────────────────────────────────────────────
 const getStyles = (scale, verticalScale) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#f2f2f2" },
+    container: { flex: 1, backgroundColor: "#f4f6fb" },
 
     header: {
       flexDirection: "row",
@@ -938,29 +1675,17 @@ const getStyles = (scale, verticalScale) =>
 
     scrollContent: {
       alignItems: "center",
-      paddingHorizontal: scale(20),
-      paddingTop: verticalScale(24),
-      paddingBottom: verticalScale(20),
+      paddingHorizontal: scale(16),
+      paddingTop: verticalScale(20),
+      paddingBottom: verticalScale(24),
     },
 
-    roleBadge: {
-      fontFamily: "PixelifySans",
-      fontSize: scale(16),
-      color: "#60B5FF",
-      textAlign: "center",
-      marginBottom: verticalScale(8),
-      letterSpacing: 1,
-    },
-
-    // ── Avatar ──
-    avatarContainer: {
-      alignItems: "center",
-      marginBottom: verticalScale(14),
-    },
+    // Avatar
+    avatarContainer: { alignItems: "center", marginBottom: verticalScale(10) },
     avatarRing: {
-      width: scale(110),
-      height: scale(110),
-      borderRadius: scale(55),
+      width: scale(100),
+      height: scale(100),
+      borderRadius: scale(50),
       backgroundColor: "#fff",
       alignItems: "center",
       justifyContent: "center",
@@ -973,24 +1698,20 @@ const getStyles = (scale, verticalScale) =>
       elevation: 4,
       overflow: "hidden",
     },
-    avatar: {
-      width: scale(90),
-      height: scale(90),
-      borderRadius: scale(45),
-    },
+    avatar: { width: scale(84), height: scale(84), borderRadius: scale(42) },
     changeAvatarBtn: {
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: "#FF9149",
       borderRadius: scale(20),
-      paddingVertical: verticalScale(5),
-      paddingHorizontal: scale(14),
+      paddingVertical: verticalScale(4),
+      paddingHorizontal: scale(12),
       marginTop: verticalScale(8),
-      gap: scale(5),
+      gap: scale(4),
     },
     changeAvatarText: {
       fontFamily: "Poppins",
-      fontSize: scale(12),
+      fontSize: scale(11),
       color: "#fff",
       fontWeight: "bold",
     },
@@ -1001,21 +1722,248 @@ const getStyles = (scale, verticalScale) =>
       fontWeight: "bold",
       color: "#1a1a2e",
       textAlign: "center",
+      marginBottom: verticalScale(4),
     },
-    role: {
+    rolePill: {
+      backgroundColor: "#60B5FF22",
+      borderRadius: scale(20),
+      paddingHorizontal: scale(14),
+      paddingVertical: verticalScale(3),
+      marginBottom: verticalScale(16),
+    },
+    rolePillText: {
       fontFamily: "Poppins",
-      fontSize: scale(13),
-      color: "#888",
-      textAlign: "center",
-      marginBottom: verticalScale(20),
+      fontSize: scale(12),
+      color: "#60B5FF",
+      fontWeight: "bold",
     },
 
+    // Tabs
+    tabBar: {
+      flexDirection: "row",
+      backgroundColor: "#fff",
+      borderRadius: scale(14),
+      padding: scale(4),
+      marginBottom: verticalScale(14),
+      width: "100%",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    tabItem: {
+      flex: 1,
+      paddingVertical: verticalScale(8),
+      alignItems: "center",
+      borderRadius: scale(10),
+    },
+    tabItemActive: { backgroundColor: "#FF9149" },
+    tabLabel: {
+      fontFamily: "Poppins",
+      fontSize: scale(13),
+      color: "#aaa",
+      fontWeight: "bold",
+    },
+    tabLabelActive: { color: "#fff" },
+    tabBadge: { color: "#fff", fontWeight: "bold" },
+
+    // Quick stat cards
+    quickStatsRow: {
+      flexDirection: "row",
+      gap: scale(10),
+      width: "100%",
+      marginBottom: verticalScale(12),
+    },
+    quickStatCard: {
+      flex: 1,
+      backgroundColor: "#fff",
+      borderRadius: scale(14),
+      padding: scale(14),
+      alignItems: "center",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
+      elevation: 2,
+      gap: verticalScale(4),
+    },
+    quickStatValue: {
+      fontFamily: "Poppins",
+      fontSize: scale(22),
+      fontWeight: "bold",
+      color: "#1a1a2e",
+    },
+    quickStatLabel: {
+      fontFamily: "Poppins",
+      fontSize: scale(10),
+      color: "#aaa",
+      textAlign: "center",
+    },
+
+    // Section cards
+    sectionCard: {
+      width: "100%",
+      backgroundColor: "#fff",
+      borderRadius: scale(14),
+      padding: scale(16),
+      marginBottom: verticalScale(12),
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: scale(6),
+      marginBottom: verticalScale(12),
+    },
+    sectionTitle: {
+      fontFamily: "Poppins",
+      fontSize: scale(14),
+      fontWeight: "bold",
+      color: "#FF9149",
+    },
+
+    // Stat rows
+    statRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: verticalScale(9),
+      borderBottomWidth: 1,
+      borderBottomColor: "#f0f0f0",
+    },
+    statLabel: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      fontWeight: "bold",
+      color: "#333",
+      flex: 1,
+    },
+    statValue: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      color: "#555",
+      marginLeft: scale(8),
+      textAlign: "right",
+    },
+
+    // Books
+    noBooks: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      color: "#aaa",
+      textAlign: "center",
+      paddingVertical: verticalScale(12),
+    },
+    bookRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: verticalScale(9),
+      borderBottomWidth: 1,
+      borderBottomColor: "#f0f0f0",
+    },
+    bookRowLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+    bookRowTitle: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      color: "#333",
+      flex: 1,
+    },
+    difficultyBadge: {
+      borderRadius: scale(8),
+      paddingHorizontal: scale(8),
+      paddingVertical: verticalScale(2),
+      marginLeft: scale(8),
+    },
+    difficultyBadgeText: {
+      fontFamily: "Poppins",
+      fontSize: scale(10),
+      fontWeight: "bold",
+    },
+
+    // At-risk
+    atRiskSubtitle: {
+      fontFamily: "Poppins",
+      fontSize: scale(11),
+      color: "#aaa",
+      marginBottom: verticalScale(10),
+    },
+    atRiskRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: verticalScale(10),
+      borderBottomWidth: 1,
+      borderBottomColor: "#f0f0f0",
+    },
+    atRiskLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+    atRiskAvatar: {
+      width: scale(32),
+      height: scale(32),
+      borderRadius: scale(16),
+      backgroundColor: "#FF914922",
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: scale(10),
+    },
+    atRiskAvatarText: {
+      fontFamily: "Poppins",
+      fontSize: scale(13),
+      fontWeight: "bold",
+      color: "#FF9149",
+    },
+    atRiskName: {
+      fontFamily: "Poppins",
+      fontSize: scale(13),
+      color: "#1a1a2e",
+      flex: 1,
+    },
+    atRiskBadge: {
+      backgroundColor: "#FF914922",
+      borderRadius: scale(10),
+      paddingHorizontal: scale(10),
+      paddingVertical: verticalScale(3),
+    },
+    atRiskBadgeSevere: { backgroundColor: "#E5393522" },
+    atRiskBadgeText: {
+      fontFamily: "Poppins",
+      fontSize: scale(11),
+      fontWeight: "bold",
+      color: "#E53935",
+    },
+    allGoodBanner: {
+      alignItems: "center",
+      paddingVertical: verticalScale(20),
+      gap: verticalScale(8),
+    },
+    allGoodText: {
+      fontFamily: "Poppins",
+      fontSize: scale(13),
+      color: "#4CAF50",
+      fontWeight: "bold",
+    },
+
+    // Bar chart
+    barTrack: {
+      height: verticalScale(8),
+      backgroundColor: "#f0f0f0",
+      borderRadius: scale(4),
+      overflow: "hidden",
+    },
+    barFill: { height: "100%", borderRadius: scale(4) },
+
+    // Class card (student)
     classCard: {
       width: "100%",
       backgroundColor: "#fff",
       borderRadius: scale(14),
       padding: scale(16),
-      marginBottom: verticalScale(16),
+      marginBottom: verticalScale(12),
       alignItems: "center",
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 1 },
@@ -1031,15 +1979,15 @@ const getStyles = (scale, verticalScale) =>
     },
     classLabel: {
       fontFamily: "Poppins",
-      fontSize: scale(16),
+      fontSize: scale(14),
       color: "#333",
-      lineHeight: 25,
+      lineHeight: 22,
     },
     classValue: {
       fontFamily: "Poppins",
-      fontSize: scale(16),
+      fontSize: scale(14),
       color: "#333",
-      lineHeight: 25,
+      lineHeight: 22,
       fontWeight: "bold",
     },
     classValueMuted: {
@@ -1061,85 +2009,11 @@ const getStyles = (scale, verticalScale) =>
       fontWeight: "bold",
     },
 
-    statsCard: {
-      width: "100%",
-      backgroundColor: "#fff",
-      borderRadius: scale(14),
-      padding: scale(16),
-      marginBottom: verticalScale(16),
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.06,
-      shadowRadius: 4,
-      elevation: 2,
-    },
-    statsTitle: {
-      fontFamily: "Poppins",
-      fontSize: scale(15),
-      fontWeight: "bold",
-      color: "#FF9149",
-      textAlign: "center",
-      marginBottom: verticalScale(12),
-    },
-    statRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingVertical: verticalScale(10),
-      borderBottomWidth: 1,
-      borderBottomColor: "#f0f0f0",
-    },
-    statLabel: {
-      fontFamily: "Poppins",
-      fontSize: scale(12),
-      fontWeight: "bold",
-      color: "#333",
-      flex: 1,
-    },
-    statValue: {
-      fontFamily: "Poppins",
-      fontSize: scale(12),
-      color: "#555",
-      marginLeft: scale(8),
-    },
-
-    noBooks: {
-      fontFamily: "Poppins",
-      fontSize: scale(12),
-      color: "#aaa",
-      textAlign: "center",
-      paddingVertical: verticalScale(12),
-    },
-    bookRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingVertical: verticalScale(10),
-      borderBottomWidth: 1,
-      borderBottomColor: "#f0f0f0",
-    },
-    bookRowLeft: {
-      flexDirection: "row",
-      alignItems: "center",
-      flex: 1,
-    },
-    bookRowTitle: {
-      fontFamily: "Poppins",
-      fontSize: scale(12),
-      color: "#333",
-      flex: 1,
-    },
-    bookRowDifficulty: {
-      fontFamily: "Poppins",
-      fontSize: scale(11),
-      color: "#aaa",
-      marginLeft: scale(8),
-    },
-
+    // Footer
     footer: {
       paddingHorizontal: scale(40),
       paddingTop: verticalScale(12),
-      backgroundColor: "#f2f2f2",
+      backgroundColor: "#f4f6fb",
     },
     logoutButton: {
       flexDirection: "row",
@@ -1158,7 +2032,72 @@ const getStyles = (scale, verticalScale) =>
       color: "#fff",
     },
 
-    // ── Avatar Modal ──
+    // Name row
+    nameRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: scale(8),
+      marginBottom: verticalScale(4),
+    },
+    editNameBtn: {
+      width: scale(26),
+      height: scale(26),
+      borderRadius: scale(13),
+      backgroundColor: "#60B5FF22",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    // Name modal
+    nameModalContainer: {
+      backgroundColor: "#fff",
+      borderRadius: scale(20),
+      padding: scale(24),
+      width: "88%",
+      alignItems: "center",
+      elevation: 10,
+    },
+    nameInput: {
+      width: "100%",
+      borderWidth: 1.5,
+      borderColor: "#60B5FF",
+      borderRadius: scale(12),
+      paddingHorizontal: scale(14),
+      paddingVertical: verticalScale(10),
+      fontFamily: "Poppins",
+      fontSize: scale(15),
+      color: "#1a1a2e",
+      marginBottom: verticalScale(18),
+      backgroundColor: "#f8fbff",
+    },
+    nameModalButtons: {
+      flexDirection: "row",
+      gap: scale(10),
+      width: "100%",
+    },
+    nameModalCancel: {
+      flex: 1,
+      paddingVertical: verticalScale(11),
+      borderRadius: scale(12),
+      backgroundColor: "#f2f2f2",
+      alignItems: "center",
+    },
+    nameModalSave: {
+      flex: 1,
+      paddingVertical: verticalScale(11),
+      borderRadius: scale(12),
+      backgroundColor: "#FF9149",
+      alignItems: "center",
+    },
+    nameModalSaveText: {
+      fontFamily: "Poppins",
+      fontSize: scale(14),
+      fontWeight: "bold",
+      color: "#fff",
+    },
+
+    // Modals
     modalOverlay: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.5)",
@@ -1220,10 +2159,7 @@ const getStyles = (scale, verticalScale) =>
       borderColor: "#FF9149",
       backgroundColor: "#fff5ee",
     },
-    builtinAvatarImage: {
-      width: scale(48),
-      height: scale(48),
-    },
+    builtinAvatarImage: { width: scale(48), height: scale(48) },
     builtinAvatarLabel: {
       fontFamily: "Poppins",
       fontSize: scale(10),
@@ -1246,8 +2182,6 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(13),
       color: "#888",
     },
-
-    // ── Image Source Modal ──
     imageSourceContainer: {
       backgroundColor: "#fff",
       borderRadius: scale(16),

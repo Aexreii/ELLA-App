@@ -654,6 +654,8 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Poppins",
       fontSize: scale(16),
       color: "#000",
+      textAlign: "center",
+      paddingHorizontal: scale(10),
     },
     scrollContainer: { paddingBottom: verticalScale(20) },
     catalog: {

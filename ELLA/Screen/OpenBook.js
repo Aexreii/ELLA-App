@@ -347,6 +347,8 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Mochi",
       color: "#000",
       marginTop: verticalScale(10),
+      paddingHorizontal: scale(16),
+      textAlign: "center",
     },
     coverImage: {
       marginTop: verticalScale(45),

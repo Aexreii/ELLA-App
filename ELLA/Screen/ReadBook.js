@@ -35,34 +35,25 @@ import {
   pronounceWord,
 } from "../utils/speechHelper";
 
-import Ellalert, { useEllAlert } from "../components/Alerts"; // ← import
+import Ellalert, { useEllAlert } from "../components/Alerts";
 
 // ─────────────────────────────────────────────────────────────
 // Feedback messages
 // ─────────────────────────────────────────────────────────────
 const CORRECT_MESSAGES = [
   "Good job!",
-
   "That's right!",
-
   "Well done!",
-
   "Keep it up!",
-
   "Excellent!",
-
   "Perfect!",
 ];
 
 const WRONG_MESSAGES = [
   "Try again!",
-
   "Almost there!",
-
   "Give it another go!",
-
   "Don't give up!",
-
   "Try once more!",
 ];
 
@@ -168,7 +159,6 @@ export default function ReadBook({ route, navigation }) {
   const { pauseMusic, resumeMusic, soundVolume, ttsVoice } = useMusic();
   const { scale, verticalScale } = useScale();
 
-  // ── Ellalert hook ──
   const { alertConfig, showAlert, closeAlert } = useEllAlert();
 
   const avatarSource = useRef(
@@ -190,6 +180,11 @@ export default function ReadBook({ route, navigation }) {
   const [localPoints, setLocalPoints] = useState(currUser?.points ?? 0);
   const [isSaving, setIsSaving] = useState(false);
 
+  // ── Congratulations screen ──────────────────────────────
+  const [showCongrats, setShowCongrats] = useState(false);
+  const sessionPointsRef = useRef(0);
+  const congratsScaleAnim = useRef(new Animated.Value(0)).current;
+
   const pointsPopAnim = useRef(new Animated.Value(0)).current;
   const [showPointsPop, setShowPointsPop] = useState(false);
 
@@ -197,6 +192,11 @@ export default function ReadBook({ route, navigation }) {
   const feedbackAnim = useRef(new Animated.Value(0)).current;
   const feedbackTimer = useRef(null);
   const voiceSoundRef = useRef(null);
+
+  // ── Avatar slide-up animation ──────────────────────────
+  const avatarSlideAnim = useRef(new Animated.Value(0)).current;
+  const avatarVisibleRef = useRef(false);
+  const avatarHideTimer = useRef(null);
 
   const [micActive, setMicActive] = useState(false);
   const recordingRef = useRef(null);
@@ -207,6 +207,7 @@ export default function ReadBook({ route, navigation }) {
   const wordTapCountsRef = useRef({});
   const sentencesReadRef = useRef(0);
   const awardedSentencesRef = useRef({});
+  const recordingsCountRef = useRef(0);
 
   const sentenceWords = book.contents[currentSentence].split(" ");
   const currentWordResults = wordResults[currentSentence];
@@ -226,6 +227,7 @@ export default function ReadBook({ route, navigation }) {
       voiceSoundRef.current?.unloadAsync();
       if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
       if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
+      if (avatarHideTimer.current) clearTimeout(avatarHideTimer.current);
     };
   }, []);
 
@@ -448,7 +450,7 @@ export default function ReadBook({ route, navigation }) {
       title: "Stop Reading?",
       message: "Your progress will be saved.",
       buttons: [
-        { text: "Keep Reading", style: "cancel" },
+        { text: "Keep Reading", style: "cancel", color: "#FF9149" },
         {
           text: "Exit",
           style: "destructive",
@@ -463,7 +465,33 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 3. Avatar feedback + voice
+  // 3. Avatar slide-up on feedback
+  // ─────────────────────────────────────────────────────────
+  const showAvatar = () => {
+    if (avatarHideTimer.current) clearTimeout(avatarHideTimer.current);
+
+    Animated.spring(avatarSlideAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 120,
+      friction: 10,
+    }).start();
+
+    avatarVisibleRef.current = true;
+
+    avatarHideTimer.current = setTimeout(() => {
+      Animated.timing(avatarSlideAnim, {
+        toValue: 0,
+        duration: 2000,
+        useNativeDriver: true,
+      }).start(() => {
+        avatarVisibleRef.current = false;
+      });
+    }, 2000);
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // 4. Avatar feedback + voice
   // ─────────────────────────────────────────────────────────
   const showFeedback = async (type) => {
     if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
@@ -471,6 +499,8 @@ export default function ReadBook({ route, navigation }) {
     const messages = type === "correct" ? CORRECT_MESSAGES : WRONG_MESSAGES;
     const msgIndex = Math.floor(Math.random() * messages.length);
     setFeedback({ message: messages[msgIndex], type });
+
+    showAvatar();
 
     feedbackAnim.setValue(0);
     Animated.spring(feedbackAnim, {
@@ -505,14 +535,14 @@ export default function ReadBook({ route, navigation }) {
     feedbackTimer.current = setTimeout(() => {
       Animated.timing(feedbackAnim, {
         toValue: 0,
-        duration: 200,
+        duration: 2000,
         useNativeDriver: true,
       }).start(() => setFeedback(null));
-    }, 500);
+    }, 2000);
   };
 
   // ─────────────────────────────────────────────────────────
-  // 4. Points pop animation
+  // 5. Points pop animation
   // ─────────────────────────────────────────────────────────
   const triggerPointsPop = (points = 3) => {
     setShowPointsPop(points);
@@ -527,7 +557,7 @@ export default function ReadBook({ route, navigation }) {
       Animated.delay(600),
       Animated.timing(pointsPopAnim, {
         toValue: 0,
-        duration: 300,
+        duration: 1500,
         useNativeDriver: true,
       }),
     ]).start(() => setShowPointsPop(false));
@@ -542,6 +572,7 @@ export default function ReadBook({ route, navigation }) {
     awardedSentencesRef.current[sentenceIndex] = true;
 
     setLocalPoints((p) => p + finalPoints);
+    sessionPointsRef.current += finalPoints; // track session total
     triggerPointsPop(finalPoints);
     try {
       const db = getFirestore();
@@ -561,7 +592,7 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 5. Mark correct
+  // 6. Mark correct
   // ─────────────────────────────────────────────────────────
   const handleMarkCorrect = () => {
     const word = sentenceWords[activeWordIndex];
@@ -595,7 +626,7 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 6. Mark wrong
+  // 7. Mark wrong
   // ─────────────────────────────────────────────────────────
   const handleMarkWrong = () => {
     const word = sentenceWords[activeWordIndex];
@@ -612,7 +643,7 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 7. Tap a word → highlight orange briefly
+  // 8. Tap a word → highlight orange briefly
   // ─────────────────────────────────────────────────────────
   const handleWordPress = async (index) => {
     if (wordResults[currentSentence][index] === "correct") return;
@@ -652,9 +683,9 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 8. Next / Prev
+  // 9. Next / Prev
   // ─────────────────────────────────────────────────────────
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!allWordsCorrect) return;
 
     sentencesReadRef.current = Math.max(
@@ -665,22 +696,17 @@ export default function ReadBook({ route, navigation }) {
     if (!isLastSentence) {
       setCurrentSentence((prev) => prev + 1);
     } else {
-      showAlert({
-        type: "success",
-        title: "Great job!",
-        message: "You've finished reading this book!",
-        buttons: [
-          {
-            text: "Done",
-            style: "default",
-            onPress: async () => {
-              await saveAndExit(true);
-              resumeMusic();
-              navigation.navigate("HomeScreen");
-            },
-          },
-        ],
-      });
+      // Save first, then show the congratulations screen
+      await saveAndExit(true);
+      // Animate the card in
+      congratsScaleAnim.setValue(0);
+      Animated.spring(congratsScaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 120,
+        friction: 8,
+      }).start();
+      setShowCongrats(true);
     }
   };
 
@@ -689,7 +715,7 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 9. Mic
+  // 10. Mic
   // ─────────────────────────────────────────────────────────
   const handleMicPress = async () => {
     if (micActive) {
@@ -789,6 +815,7 @@ export default function ReadBook({ route, navigation }) {
 
       if (sessionIdRef.current) {
         const db = getFirestore();
+        recordingsCountRef.current += 1;
         updateDoc(doc(db, "readingSessions", sessionIdRef.current), {
           recordingsAttempted: increment(1),
         }).catch(() => {});
@@ -824,6 +851,11 @@ export default function ReadBook({ route, navigation }) {
   // ─────────────────────────────────────────────────────────
   const s = getStyles(scale, verticalScale);
 
+  const avatarTranslateY = avatarSlideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [scale(120), 0],
+  });
+
   if (!progressLoaded) {
     return (
       <View style={[s.container, { justifyContent: "center" }]}>
@@ -844,6 +876,85 @@ export default function ReadBook({ route, navigation }) {
         </View>
       </Modal>
 
+      {/* ── Congratulations Screen ── */}
+      <Modal visible={showCongrats} transparent animationType="fade">
+        <View style={s.congratsOverlay}>
+          <Animated.View
+            style={[
+              s.congratsCard,
+              { transform: [{ scale: congratsScaleAnim }] },
+            ]}
+          >
+            {/* Stars row */}
+            <View style={s.starsRow}>
+              {["★", "★", "★"].map((star, i) => (
+                <Text key={i} style={[s.star, { marginHorizontal: scale(4) }]}>
+                  {star}
+                </Text>
+              ))}
+            </View>
+
+            <Text style={s.congratsTitle}>Congratulations!</Text>
+            <Text style={s.congratsSubtitle}>You finished reading</Text>
+            <Text style={s.congratsBookTitle}>"{book.title}"</Text>
+
+            {/* Stats summary */}
+            <View style={s.congratsStatsBox}>
+              <View style={s.congratsStatRow}>
+                <Ionicons
+                  name="book-outline"
+                  size={scale(20)}
+                  color="#60B5FF"
+                />
+                <Text style={s.congratsStatLabel}>Words Read</Text>
+                <Text style={s.congratsStatValue}>
+                  {book.contents.reduce(
+                    (acc, s) => acc + s.split(" ").length,
+                    0,
+                  )}
+                </Text>
+              </View>
+              <View style={s.congratsDivider} />
+              <View style={s.congratsStatRow}>
+                <Ionicons name="mic-outline" size={scale(20)} color="#FF9149" />
+                <Text style={s.congratsStatLabel}>Recordings Taken</Text>
+                <Text style={s.congratsStatValue}>
+                  {recordingsCountRef.current}
+                </Text>
+              </View>
+              <View style={s.congratsDivider} />
+              <View style={s.congratsStatRow}>
+                <Image
+                  source={require("../assets/icons/diamond.png")}
+                  style={s.congratsStatDiamond}
+                  contentFit="contain"
+                />
+                <Text style={s.congratsStatLabel}>Points Earned</Text>
+                <Text style={[s.congratsStatValue, { color: "#FFD700" }]}>
+                  +{sessionPointsRef.current}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={s.congratsMessage}>
+              Keep reading to earn even more! 🌟
+            </Text>
+
+            <TouchableOpacity
+              style={s.congratsDoneButton}
+              activeOpacity={0.85}
+              onPress={() => {
+                setShowCongrats(false);
+                resumeMusic();
+                navigation.navigate("HomeScreen");
+              }}
+            >
+              <Text style={s.congratsDoneText}>Done!</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </Modal>
+
       {/* ── Ellalert ── */}
       <Ellalert config={alertConfig} onClose={closeAlert} />
 
@@ -861,7 +972,7 @@ export default function ReadBook({ route, navigation }) {
             <Image
               source={require("../assets/icons/diamond.png")}
               style={s.diamondIcon}
-              resizeMode="contain"
+              contentFit="contain"
             />
             <Text style={s.amountText}>{localPoints}</Text>
           </View>
@@ -974,7 +1085,17 @@ export default function ReadBook({ route, navigation }) {
           ? "All words read! Tap → to continue"
           : `Tap a word to hear it pronounced`}
       </Text>
-      <View style={s.avatarSection}>
+
+      {/* ── Avatar: slides up only when feedback is active ── */}
+      <Animated.View
+        style={[
+          s.avatarSection,
+          {
+            transform: [{ translateY: avatarTranslateY }],
+          },
+        ]}
+        pointerEvents="none"
+      >
         {feedback && (
           <Animated.View
             style={[
@@ -1016,7 +1137,7 @@ export default function ReadBook({ route, navigation }) {
           style={s.avatarImage}
           contentFit="contain"
         />
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -1121,6 +1242,8 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Mochi",
       color: "#000",
       marginTop: verticalScale(15),
+      textAlign: "center",
+      paddingHorizontal: scale(20),
     },
     writer: {
       fontSize: scale(11),
@@ -1166,7 +1289,7 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "PoppinsBold",
     },
     wordCorrect: { fontFamily: "PoppinsBold", color: "#4CAF50" },
-    wordWrong: { fontFamily: "PoppinsBold", color: "#E53935" },
+    wordWrong: { fontFamily: "PoppinsBold", color: "#ff6f00" },
     wordOrange: { fontFamily: "PoppinsBold", color: "#FF9149" },
     progress: {
       marginTop: verticalScale(8),
@@ -1201,6 +1324,16 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Poppins",
       marginTop: scale(2),
     },
+    hintText: {
+      fontFamily: "Poppins",
+      fontSize: scale(16),
+      color: "#aaa",
+      marginTop: verticalScale(4),
+      fontStyle: "italic",
+      textAlign: "center",
+    },
+
+    // ── Avatar ──
     avatarSection: {
       position: "absolute",
       bottom: 0,
@@ -1217,16 +1350,8 @@ const getStyles = (scale, verticalScale) =>
       paddingVertical: verticalScale(7),
       maxWidth: scale(150),
     },
-    hintText: {
-      fontFamily: "Poppins",
-      fontSize: scale(16),
-      color: "#aaa",
-      marginTop: verticalScale(4),
-      fontStyle: "italic",
-      textAlign: "center",
-    },
     bubbleCorrect: { backgroundColor: "#4CAF50" },
-    bubbleWrong: { backgroundColor: "#E53935" },
+    bubbleWrong: { backgroundColor: "#FED85D" },
     speechText: {
       fontFamily: "PixelifySans",
       fontSize: scale(13),
@@ -1244,9 +1369,110 @@ const getStyles = (scale, verticalScale) =>
       marginLeft: scale(18),
     },
     bubbleTailCorrect: { borderTopColor: "#4CAF50" },
-    bubbleTailWrong: { borderTopColor: "#E53935" },
+    bubbleTailWrong: { borderTopColor: "#FED85D" },
     avatarImage: {
       width: scale(65),
       height: scale(65),
+    },
+
+    // ── Congratulations Modal ──
+    congratsOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    congratsCard: {
+      backgroundColor: "#fff",
+      borderRadius: scale(24),
+      paddingVertical: verticalScale(36),
+      paddingHorizontal: scale(32),
+      alignItems: "center",
+      width: "85%",
+      elevation: 10,
+      shadowColor: "#000",
+      shadowOpacity: 0.2,
+      shadowRadius: scale(16),
+      shadowOffset: { width: 0, height: 6 },
+    },
+    starsRow: {
+      flexDirection: "row",
+      marginBottom: verticalScale(8),
+    },
+    star: {
+      fontSize: scale(36),
+      color: "#FFD700",
+    },
+    congratsTitle: {
+      fontFamily: "PixelifySans",
+      fontSize: scale(28),
+      color: "#FF9149",
+      marginBottom: verticalScale(4),
+    },
+    congratsSubtitle: {
+      fontFamily: "Poppins",
+      fontSize: scale(14),
+      color: "#888",
+    },
+    congratsBookTitle: {
+      fontFamily: "Mochi",
+      fontSize: scale(18),
+      color: "#333",
+      textAlign: "center",
+      marginBottom: verticalScale(20),
+      marginTop: verticalScale(2),
+    },
+    congratsStatsBox: {
+      backgroundColor: "#F8F9FA",
+      borderRadius: scale(16),
+      paddingVertical: verticalScale(6),
+      paddingHorizontal: scale(16),
+      width: "100%",
+      marginBottom: verticalScale(18),
+    },
+    congratsStatRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: verticalScale(10),
+      gap: scale(10),
+    },
+    congratsStatLabel: {
+      fontFamily: "Poppins",
+      fontSize: scale(13),
+      color: "#555",
+      flex: 1,
+    },
+    congratsStatValue: {
+      fontFamily: "PixelifySans",
+      fontSize: scale(18),
+      color: "#333",
+    },
+    congratsStatDiamond: {
+      width: scale(20),
+      height: scale(20),
+    },
+    congratsDivider: {
+      height: 1,
+      backgroundColor: "#E9ECEF",
+      width: "100%",
+    },
+    congratsMessage: {
+      fontFamily: "Poppins",
+      fontSize: scale(13),
+      color: "#aaa",
+      fontStyle: "italic",
+      textAlign: "center",
+      marginBottom: verticalScale(22),
+    },
+    congratsDoneButton: {
+      backgroundColor: "#FF9149",
+      borderRadius: scale(50),
+      paddingVertical: verticalScale(12),
+      paddingHorizontal: scale(48),
+    },
+    congratsDoneText: {
+      fontFamily: "PixelifySans",
+      fontSize: scale(18),
+      color: "#fff",
     },
   });

@@ -3,7 +3,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { auth } from "../firebase";
 import { Platform } from "react-native";
 
-export const BACKEND_URL = "http://10.60.79.79:5000";
+export const BACKEND_URL = "https://ella-app-e0gb.onrender.com";
 
 export const RECORDING_OPTIONS = {
   isMeteringEnabled: false,
