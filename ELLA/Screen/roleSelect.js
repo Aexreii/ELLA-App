@@ -159,13 +159,15 @@ const getStyles = (scale, verticalScale) =>
       height: scale(120),
       borderRadius: scale(100),
       backgroundColor: "#fff",
-      borderColor: "#fff",
-      borderWidth: 1,
       alignItems: "center",
       justifyContent: "center",
       overflow: "visible",
     },
-    roleGif: { width: scale(45), height: "60%", borderRadius: scale(100) },
+    roleGif: {
+      width: scale(150),
+      height: scale(150),
+      borderRadius: scale(75),
+    },
     roleLabel: {
       fontFamily: "PixelifySans",
       fontSize: scale(24),
