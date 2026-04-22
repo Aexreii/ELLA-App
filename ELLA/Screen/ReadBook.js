@@ -71,38 +71,55 @@ const VOICE_FILES = {
   wrong_4: require("../assets/sounds/11.mp3"),
 };
 
-// Aligns spoken words to expected words using dynamic programming
+// In ReadBook.jsx — replace alignWords()
+
+function editDistance(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) =>
+      i === 0 ? j : j === 0 ? i : 0,
+    ),
+  );
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[a.length][b.length];
+}
+
+function wordsMatch(spoken, expected) {
+  if (spoken === expected) return true;
+  // Allow 1 edit for words 4+ chars, exact for short words to avoid "to"↔"do"
+  const threshold = expected.length >= 4 ? 1 : 0;
+  return editDistance(spoken, expected) <= threshold;
+}
+
 function alignWords(expectedWords, spokenWords) {
   const exp = expectedWords.map(cleanWord);
   const spk = spokenWords.map(cleanWord).filter(Boolean);
 
-  const m = exp.length;
-  const n = spk.length;
-
+  const m = exp.length,
+    n = spk.length;
   const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (exp[i - 1] === spk[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
-    }
-  }
 
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = wordsMatch(exp[i - 1], spk[j - 1]) // ← fuzzy instead of ===
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+
+  // backtrack (same as before)
   const matched = new Array(m).fill(false);
   let i = m,
     j = n;
   while (i > 0 && j > 0) {
-    if (exp[i - 1] === spk[j - 1]) {
+    if (wordsMatch(exp[i - 1], spk[j - 1])) {
       matched[i - 1] = true;
       i--;
       j--;
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
-      i--;
-    } else {
-      j--;
-    }
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) i--;
+    else j--;
   }
 
   return matched.map((hit) => (hit ? "correct" : "wrong"));

@@ -357,7 +357,6 @@ export default function HomeScreen() {
     );
   }
 
-  // ── Student view ───────────────────────────────────────────
   return (
     <ImageBackground
       source={require("../assets/backgrounds/page.png")}
@@ -405,7 +404,6 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* ── Book categories ── */}
             <View style={s.catalog}>
               {[
                 { label: "Recommended", data: recommended },
@@ -444,7 +442,6 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
-        {/* ── Footer ── */}
         <View style={s.footer}>
           <TouchableOpacity
             style={s.footerButton}
@@ -499,7 +496,6 @@ export default function HomeScreen() {
   );
 }
 
-// ── Extracted Exit Modal ────────────────────────────────────
 function ExitModal({ visible, onClose, scale, verticalScale, s }) {
   return (
     <Modal

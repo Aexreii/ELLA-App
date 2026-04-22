@@ -37,18 +37,28 @@ const CLOUDINARY_CLOUD_NAME = "dygbbqapd";
 const CLOUDINARY_UPLOAD_PRESET = "ella_books";
 
 // ── Helpers ────────────────────────────────────────────────
-function getReadingLevel(sessions) {
-  if (!sessions || sessions.length === 0) return "Beginner";
+
+function getReadingLevel(completedBooks) {
+  if (!completedBooks || completedBooks.length === 0) return "Beginner";
+
   const diffMap = { Easy: 1, Intermediate: 2, Hard: 3 };
-  const completed = sessions.filter((s) => s.completed);
-  if (completed.length === 0) return "Beginner";
+  const count = completedBooks.length;
   const avg =
-    completed.reduce((sum, s) => sum + (diffMap[s.difficulty] ?? 1), 0) /
-    completed.length;
-  if (avg >= 2.5) return "Advanced";
-  if (avg >= 1.5) return "Intermediate";
+    completedBooks.reduce((sum, b) => sum + (diffMap[b.difficulty] ?? 1), 0) /
+    count;
+  console.log("Reading level calc:", { count, avg });
+  if (avg >= 20.5 || (avg >= 10.0 && count >= 50)) return "Advanced";
+  if (avg >= 10.5 || count >= 30) return "Intermediate";
   return "Beginner";
 }
+
+/**
+ * FIX (class aggregates): getReadingLevelFromBooks accepts an array of
+ * completed book objects per student — used in fetchClassAggregates where
+ * we need to join progress docs with book difficulty data.
+ * Reuses the same logic as getReadingLevel above.
+ */
+const getReadingLevelFromBooks = getReadingLevel;
 
 function formatTime(seconds) {
   if (!seconds || seconds === 0) return "0 mins";
@@ -220,13 +230,11 @@ export default function UserProfile() {
       setClassAggLoading(true);
       const db = getFirestore();
 
-      // Get teacher's classes
       const classesSnap = await getDocs(
         query(collection(db, "classes"), where("teacherID", "==", uid)),
       );
       if (classesSnap.empty) return;
 
-      // Collect all student IDs across all classes
       let allStudentIds = [];
       classesSnap.docs.forEach((d) => {
         const students = d.data().students ?? [];
@@ -235,7 +243,10 @@ export default function UserProfile() {
       const uniqueStudentIds = [...new Set(allStudentIds)];
       if (uniqueStudentIds.length === 0) return;
 
-      // Fetch all students' sessions and progress in parallel
+      // ── FIX: build a book difficulty cache so we can compute reading
+      // level correctly without hardcoding difficulty per student ──────
+      const bookDifficultyCache = {};
+
       const sessionsByStudent = {};
       const progressByStudent = {};
 
@@ -261,8 +272,28 @@ export default function UserProfile() {
         }),
       );
 
+      // Pre-fetch all unique book IDs across all students to build the cache
+      const allBookIds = new Set();
+      for (const sid of uniqueStudentIds) {
+        const progress = progressByStudent[sid] ?? [];
+        progress.forEach((p) => {
+          if (p.bookId) allBookIds.add(p.bookId);
+        });
+      }
+
+      await Promise.all(
+        [...allBookIds].map(async (bookId) => {
+          if (bookDifficultyCache[bookId] !== undefined) return;
+          try {
+            const snap = await getDoc(doc(db, "books", bookId));
+            bookDifficultyCache[bookId] = snap.exists() ? snap.data() : null;
+          } catch {
+            bookDifficultyCache[bookId] = null;
+          }
+        }),
+      );
+
       // ── Compute aggregates ──────────────────────────────
-      const diffMap = { Easy: 1, Intermediate: 2, Hard: 3 };
       const levelCounts = { Beginner: 0, Intermediate: 0, Advanced: 0 };
       let totalBooksCompleted = 0;
       const bookReadCounts = {};
@@ -274,23 +305,26 @@ export default function UserProfile() {
         const progress = progressByStudent[sid] ?? [];
         const userData = progress._userData ?? {};
 
-        // Reading level distribution
-        const level = getReadingLevel(sessions);
+        // FIX: build completed book objects (with difficulty) per student
+        // so getReadingLevel receives books, not sessions
+        const completedBookObjs = progress
+          .filter((p) => p.completed && p.bookId)
+          .map((p) => bookDifficultyCache[p.bookId])
+          .filter(Boolean);
+
+        const level = getReadingLevelFromBooks(completedBookObjs);
         levelCounts[level] = (levelCounts[level] ?? 0) + 1;
 
-        // Avg books completed
         const booksCompleted = progress.filter((p) => p.completed).length;
         totalBooksCompleted += booksCompleted;
         studentsWithData++;
 
-        // Book popularity
         progress
           .filter((p) => p.completed && p.bookId)
           .forEach((p) => {
             bookReadCounts[p.bookId] = (bookReadCounts[p.bookId] ?? 0) + 1;
           });
 
-        // At-risk: hasn't read in 7+ days
         const lastActive = getLastActive(sessions);
         const days = lastActive ? daysSince(lastActive) : 999;
         if (days >= 7) {
@@ -302,7 +336,7 @@ export default function UserProfile() {
         }
       }
 
-      // Most / least read books
+      // Most / least read books — reuse the already-cached book data
       const bookEntries = Object.entries(bookReadCounts);
       let mostReadBook = null;
       let leastReadBook = null;
@@ -312,16 +346,12 @@ export default function UserProfile() {
         const [mostId, mostCount] = bookEntries[0];
         const [leastId, leastCount] = bookEntries[bookEntries.length - 1];
 
-        const [mostSnap, leastSnap] = await Promise.all([
-          getDoc(doc(db, "books", mostId)),
-          getDoc(doc(db, "books", leastId)),
-        ]);
         mostReadBook = {
-          title: mostSnap.exists() ? mostSnap.data().title : mostId,
+          title: bookDifficultyCache[mostId]?.title ?? mostId,
           count: mostCount,
         };
         leastReadBook = {
-          title: leastSnap.exists() ? leastSnap.data().title : leastId,
+          title: bookDifficultyCache[leastId]?.title ?? leastId,
           count: leastCount,
         };
       }
@@ -366,21 +396,25 @@ export default function UserProfile() {
         0,
       );
 
-      // Completed books
+      // ── FIX: fetch completed book docs FIRST so we can pass them to
+      // getReadingLevel instead of the sessions array ─────────────────
       const completedProgressDocs = progressDocs.filter(
         (p) => p.completed && p.bookId,
       );
       const uniqueCompletedBookIds = [
         ...new Set(completedProgressDocs.map((p) => p.bookId)),
       ];
+
+      let completedBookDocs = [];
       if (uniqueCompletedBookIds.length > 0) {
-        const bookDocs = await Promise.all(
+        const fetched = await Promise.all(
           uniqueCompletedBookIds.map(async (bookId) => {
             const snap = await getDoc(doc(db, "books", bookId));
             return snap.exists() ? { id: snap.id, ...snap.data() } : null;
           }),
         );
-        setCompletedBooks(bookDocs.filter(Boolean));
+        completedBookDocs = fetched.filter(Boolean);
+        setCompletedBooks(completedBookDocs);
       }
 
       // Abandoned books (started but not completed)
@@ -432,7 +466,6 @@ export default function UserProfile() {
         }
       }
 
-      // ── Per-student reading behavior stats ────────────
       const streak = computeStreak(sessionDocs);
       const mostActiveDay = getMostActiveDay(sessionDocs);
       const lastActiveDate = getLastActive(sessionDocs);
@@ -472,19 +505,19 @@ export default function UserProfile() {
           booksSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
         );
 
-        // Kick off class aggregates fetch
         fetchClassAggregates(uid);
       }
 
       setStats({
         booksRead: booksCompleted,
-        readingLevel: getReadingLevel(sessionDocs),
+        // FIX: pass completedBookDocs (books with difficulty field),
+        // not sessionDocs (sessions have no difficulty)
+        readingLevel: getReadingLevel(completedBookDocs),
         stickersUnlocked,
         readingTime: formatTime(totalTimeSeconds),
         managedClassCount,
         totalStudents,
         booksUploaded,
-        // Reading behavior
         streak,
         mostActiveDay,
         lastActiveDate,
@@ -787,7 +820,6 @@ export default function UserProfile() {
   // ── Teacher tab content ────────────────────────────────
   const renderTeacherOverview = () => (
     <>
-      {/* Quick Stats Row */}
       <View style={s.quickStatsRow}>
         <QuickStatCard
           icon="book-outline"
@@ -805,7 +837,6 @@ export default function UserProfile() {
         />
       </View>
 
-      {/* Class Aggregates */}
       <View style={s.sectionCard}>
         <View style={s.sectionHeader}>
           <Ionicons name="stats-chart" size={scale(16)} color="#FF9149" />
@@ -848,7 +879,6 @@ export default function UserProfile() {
         )}
       </View>
 
-      {/* Reading Level Distribution */}
       <View style={s.sectionCard}>
         <View style={s.sectionHeader}>
           <Ionicons name="bar-chart-outline" size={scale(16)} color="#FF9149" />
@@ -872,7 +902,6 @@ export default function UserProfile() {
         )}
       </View>
 
-      {/* Uploaded Books */}
       <View style={s.sectionCard}>
         <View style={s.sectionHeader}>
           <Ionicons name="library-outline" size={scale(16)} color="#FF9149" />
@@ -989,7 +1018,6 @@ export default function UserProfile() {
     <View style={[s.container, { paddingTop: insets.top }]}>
       <Ellalert config={alertConfig} onClose={closeAlert} />
 
-      {/* Header */}
       <View style={s.header}>
         <TouchableOpacity
           style={s.backButton}
@@ -1055,7 +1083,6 @@ export default function UserProfile() {
         {/* ── TEACHER VIEW ── */}
         {isTeacher ? (
           <>
-            {/* Tab Bar */}
             <View style={s.tabBar}>
               {["overview", "at-risk"].map((tab) => (
                 <TouchableOpacity
@@ -1099,7 +1126,6 @@ export default function UserProfile() {
         ) : (
           /* ── STUDENT VIEW ── */
           <>
-            {/* Class info card */}
             <View style={s.classCard}>
               {loading ? (
                 <View style={s.classRow}>
@@ -1155,7 +1181,6 @@ export default function UserProfile() {
               )}
             </View>
 
-            {/* Reading Stats */}
             <View style={s.sectionCard}>
               <View style={s.sectionHeader}>
                 <Ionicons
@@ -1197,8 +1222,6 @@ export default function UserProfile() {
               )}
             </View>
 
-            {/* Behavior Stats */}
-            {/* Reading Behavior — teacher only */}
             {isTeacherViewing && (
               <View style={s.sectionCard}>
                 <View style={s.sectionHeader}>
@@ -1252,8 +1275,6 @@ export default function UserProfile() {
                 )}
               </View>
             )}
-
-            {/* Completed Books */}
 
             <View style={s.sectionCard}>
               <View style={s.sectionHeader}>
@@ -1320,7 +1341,6 @@ export default function UserProfile() {
               )}
             </View>
 
-            {/* Abandoned Books */}
             {abandonedBooks.length > 0 && (
               <View style={s.sectionCard}>
                 <View style={s.sectionHeader}>
@@ -1378,7 +1398,6 @@ export default function UserProfile() {
         )}
       </ScrollView>
 
-      {/* Log Out */}
       {isOwnProfile && (
         <View
           style={[
@@ -1680,7 +1699,6 @@ const getStyles = (scale, verticalScale) =>
       paddingBottom: verticalScale(24),
     },
 
-    // Avatar
     avatarContainer: { alignItems: "center", marginBottom: verticalScale(10) },
     avatarRing: {
       width: scale(100),
@@ -1738,7 +1756,6 @@ const getStyles = (scale, verticalScale) =>
       fontWeight: "bold",
     },
 
-    // Tabs
     tabBar: {
       flexDirection: "row",
       backgroundColor: "#fff",
@@ -1768,7 +1785,6 @@ const getStyles = (scale, verticalScale) =>
     tabLabelActive: { color: "#fff" },
     tabBadge: { color: "#fff", fontWeight: "bold" },
 
-    // Quick stat cards
     quickStatsRow: {
       flexDirection: "row",
       gap: scale(10),
@@ -1801,7 +1817,6 @@ const getStyles = (scale, verticalScale) =>
       textAlign: "center",
     },
 
-    // Section cards
     sectionCard: {
       width: "100%",
       backgroundColor: "#fff",
@@ -1827,7 +1842,6 @@ const getStyles = (scale, verticalScale) =>
       color: "#FF9149",
     },
 
-    // Stat rows
     statRow: {
       flexDirection: "row",
       justifyContent: "space-between",
@@ -1851,7 +1865,6 @@ const getStyles = (scale, verticalScale) =>
       textAlign: "right",
     },
 
-    // Books
     noBooks: {
       fontFamily: "Poppins",
       fontSize: scale(12),
@@ -1886,7 +1899,6 @@ const getStyles = (scale, verticalScale) =>
       fontWeight: "bold",
     },
 
-    // At-risk
     atRiskSubtitle: {
       fontFamily: "Poppins",
       fontSize: scale(11),
@@ -1948,7 +1960,6 @@ const getStyles = (scale, verticalScale) =>
       fontWeight: "bold",
     },
 
-    // Bar chart
     barTrack: {
       height: verticalScale(8),
       backgroundColor: "#f0f0f0",
@@ -1957,7 +1968,6 @@ const getStyles = (scale, verticalScale) =>
     },
     barFill: { height: "100%", borderRadius: scale(4) },
 
-    // Class card (student)
     classCard: {
       width: "100%",
       backgroundColor: "#fff",
@@ -2009,7 +2019,6 @@ const getStyles = (scale, verticalScale) =>
       fontWeight: "bold",
     },
 
-    // Footer
     footer: {
       paddingHorizontal: scale(40),
       paddingTop: verticalScale(12),
@@ -2032,7 +2041,6 @@ const getStyles = (scale, verticalScale) =>
       color: "#fff",
     },
 
-    // Name row
     nameRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -2049,7 +2057,6 @@ const getStyles = (scale, verticalScale) =>
       justifyContent: "center",
     },
 
-    // Name modal
     nameModalContainer: {
       backgroundColor: "#fff",
       borderRadius: scale(20),
@@ -2097,7 +2104,6 @@ const getStyles = (scale, verticalScale) =>
       color: "#fff",
     },
 
-    // Modals
     modalOverlay: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.5)",

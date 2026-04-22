@@ -12,7 +12,6 @@ import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useScale } from "../utils/scaling";
 
-// ── Team members ───────────────────────────────────────────
 const TEAM = [
   {
     name: "Dexter Andrei B. Rañosa",
@@ -41,16 +40,17 @@ const TEAM = [
   },
 ];
 
-// Split into rows: first member centered, then pairs
+//rows lang dis for the devs.
 function buildRows(members) {
   const rows = [];
-  rows.push([members[0]]); // PM centered alone
+  rows.push([members[0]]);
   for (let i = 1; i < members.length; i += 2) {
     rows.push(members.slice(i, i + 2));
   }
   return rows;
 }
 
+//basic layout
 export default function aboutElla() {
   const navigation = useNavigation();
   const { scale, verticalScale } = useScale();
@@ -61,7 +61,6 @@ export default function aboutElla() {
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
-      {/* ── Header ── */}
       <View style={s.header}>
         <TouchableOpacity
           style={s.backButton}

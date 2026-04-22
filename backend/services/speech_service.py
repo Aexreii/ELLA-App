@@ -8,7 +8,7 @@ import os
 import json
 import struct
 import traceback
-import re  
+import re
 from num2words import num2words
 
 
@@ -40,19 +40,86 @@ class SpeechService:
             self.client = None
             self.tts_client = None
 
+    # ── Dynamic edit-distance resolver ────────────────────────────────────────
+    # Replaces both hardcoded homophone maps. For each spoken word, if it's
+    # within edit distance of an expected word, it gets replaced — no static
+    # map needed. Stricter threshold for short words to avoid "to"↔"do" etc.
+
+    @staticmethod
+    def _edit_distance(a, b):
+        dp = list(range(len(b) + 1))
+        for i, ca in enumerate(a):
+            ndp = [i + 1]
+            for j, cb in enumerate(b):
+                ndp.append(min(
+                    dp[j] + (0 if ca == cb else 1),
+                    dp[j + 1] + 1,
+                    ndp[j] + 1,
+                ))
+            dp = ndp
+        return dp[len(b)]
+
+    @staticmethod
+    def _resolve_against_expected(transcript_words, expected_words):
+        """
+        Dynamically resolves spoken words against expected words using edit
+        distance. No hardcoded maps — if a spoken word is close enough to an
+        expected word, it gets normalized to that word.
+        """
+        expected_clean = [
+            re.sub(r'[^a-z0-9]', '', w.lower()) for w in expected_words
+        ]
+
+        resolved = []
+        for word in transcript_words:
+            clean = re.sub(r'[^a-z0-9]', '', word.lower())
+            best_match = None
+            best_dist = float('inf')
+
+            for exp in expected_clean:
+                dist = SpeechService._edit_distance(clean, exp)
+                # Stricter for short words — "to"/"do"/"go" are too similar
+                threshold = 1 if len(exp) >= 4 else 0
+                if dist <= threshold and dist < best_dist:
+                    best_dist = dist
+                    best_match = exp
+
+            resolved.append(best_match if best_match else clean)
+        return resolved
+
+    @staticmethod
+    def _build_speech_contexts(expected_words):
+        """
+        Builds STT hint contexts from expected words only — no hardcoded
+        homophone map. Uses the $ prefix on the full sentence to strongly
+        bias the engine toward the expected utterance, which handles most
+        homophone cases at the acoustic level before any post-processing.
+        """
+        if not expected_words:
+            return []
+
+        phrases = list(expected_words)
+
+        # $ prefix = near-exact phrase hint, dramatically helps function words
+        # like "the", "and", "a" that are acoustically ambiguous in isolation
+        full_sentence = " ".join(expected_words)
+        phrases.append(f"${full_sentence}")
+
+        return [
+            speech.SpeechContext(
+                phrases=list(set(phrases)),
+                boost=20.0,
+            )
+        ]
+
     def _normalize_transcript(self, text):
-        """Converts digits like '1' to 'one' and removes hyphens."""
+        """Converts digits to words and removes hyphens. No homophone map."""
         if not text:
             return ""
-        
-        # Finds numbers and converts them to words (e.g., "1" -> "one")
-        # We replace hyphens with spaces because "twenty-one" might fail comparison with "twenty one"
         text = re.sub(r'\d+', lambda m: num2words(int(m.group(0))), text)
         return text.replace("-", " ").lower().strip()
-    
 
     def _read_wav_sample_rate(self, audio_content):
-        """Read sample rate from WAV header bytes 24-27 (little-endian uint32)."""
         try:
             if len(audio_content) < 44:
                 return 16000
@@ -74,48 +141,37 @@ class SpeechService:
 
         try:
             encoding = kwargs.get('encoding', 'WAV')
-            hints = kwargs.get('hints', [])  # ← list of expected words passed from app
+            expected_words = kwargs.get('hints', [])
 
             print(f"📤 Sending {len(audio_content)} bytes to Google STT (encoding={encoding})")
             print(f"   first 8 bytes : {audio_content[:8].hex()}")
-            if hints:
-                print(f"   hints: {hints}")
-            
-            
+            if expected_words:
+                print(f"   expected words: {expected_words}")
 
             audio = speech.RecognitionAudio(content=audio_content)
+            speech_contexts = self._build_speech_contexts(expected_words)
 
-            # Build speech context from hints
-            speech_contexts = []
-            if hints:
-                speech_contexts.append(
-                    speech.SpeechContext(
-                        phrases=hints,
-                        boost=20.0,  # 0–20, higher = stronger boost
-                    )
-                )
-
-            config_params = {
-                "language_code": language_code,
-                "enable_automatic_punctuation": False,
-                "speech_contexts": speech_contexts,
-            }
-
+            shared_params = dict(
+                language_code=language_code,
+                enable_automatic_punctuation=False,
+                use_enhanced=True,
+                model="latest_long",
+                speech_contexts=speech_contexts,
+            )
 
             if encoding == 'MP4':
                 config = speech.RecognitionConfig(
                     encoding=speech.RecognitionConfig.AudioEncoding.MP3,
                     sample_rate_hertz=16000,
                     audio_channel_count=1,
-                    **config_params 
+                    **shared_params,
                 )
             else:
                 sample_rate = self._read_wav_sample_rate(audio_content)
                 config = speech.RecognitionConfig(
                     encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
                     sample_rate_hertz=sample_rate,
-                    **config_params,  
-                    speech_contexts=speech_contexts,
+                    **shared_params,
                 )
 
             response = self.client.recognize(config=config, audio=audio)
@@ -132,18 +188,29 @@ class SpeechService:
             raw_transcript = response.results[0].alternatives[0].transcript
             confidence = response.results[0].alternatives[0].confidence
 
-            clean_transcript = self._normalize_transcript(raw_transcript)
-            print(f"✅ Clean Transcript: {clean_transcript!r} (Raw: {raw_transcript!r})")
+            # Step 1: normalize digits and hyphens
+            normalized = self._normalize_transcript(raw_transcript)
+
+            # Step 2: dynamically resolve spoken words against expected words
+            # using edit distance — no hardcoded homophone map
+            if expected_words:
+                spoken_words = normalized.split()
+                resolved = self._resolve_against_expected(spoken_words, expected_words)
+                clean_transcript = " ".join(resolved)
+            else:
+                clean_transcript = normalized
+
+            print(f"✅ Transcript: {clean_transcript!r} (raw: {raw_transcript!r})")
             return {
-                'transcript': clean_transcript, 
-                'confidence': confidence
+                'transcript': clean_transcript,
+                'confidence': confidence,
             }
 
         except Exception as e:
             print(f"❌ Transcription error: {type(e).__name__}: {e}")
             print(traceback.format_exc())
             return None
-        
+
     def pronounce_word(self, word, voice_name='en-US-Neural2-F'):
         try:
             from google.cloud import texttospeech
