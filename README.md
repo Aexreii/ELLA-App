@@ -1,280 +1,234 @@
+# ELLA — English Literacy Learning App
 
-# ELLA - English Literacy Learning App
+> **Your English Buddy** — A gamified mobile reading app for young learners, powered by speech recognition and interactive literacy exercises.
 
-A comprehensive reading literacy application designed to help children learn to read through interactive storytelling, speech recognition, and gamified learning experiences.
+---
 
-##  Project Overview
+## 🌟 Overview
 
-ELLA is a full-stack React Native application with a Flask backend that provides:
-- **Interactive Reading**: Sentence-by-sentence reading with word-by-word pronunciation practice
-- **Speech Recognition**: Real-time pronunciation evaluation using Google Cloud Speech-to-Text
-- **Gamification**: Point-based rewards system with unlockable stickers and achievements
-- **Personalized Learning**: Book recommendations based on user progress and reading level
-- **Role-Based Access**: Separate experiences for Students and Teachers
-- **Progress Tracking**: Detailed analytics on reading sessions, accuracy, and performance
+**ELLA (English Literacy Learning App)** is a React Native mobile application designed to help young learners develop English reading and literacy skills. It features real-time speech recognition, gamified rewards, a digital library of books, and a classroom management system for teachers.
 
-##  Architecture
+The app supports two user roles:
+- **Students** — read books, practice pronunciation, earn points, and unlock sticker prizes.
+- **Teachers** — upload reading materials, manage class enrollment, and monitor student progress.
+
+---
+
+## 🧑‍💻 Team
+
+| Name | Role |
+|---|---|
+| Dexter Andrei B. Rañosa | Project Manager |
+| Mark L. Dela Cruz | UI/UX & Frontend Developer |
+| Viktor Cassidy P. Ocenar | Backend Developer |
+| Shana Aislinn M. Gamis | Documentation Specialist & Database Engineer |
+| Xaris Joy D. Tabayag | Quality Tester & Requirements Specialist |
+
+---
+
+## 🏗️ Tech Stack
+
+### Frontend (Mobile)
+- **React Native** — cross-platform iOS & Android
+- **Firebase Auth** — email/password + Google Sign-In
+- **Firebase Firestore** — real-time NoSQL database
+- **Expo AV** — audio recording & playback
+- **React Navigation** — screen routing
+- **Cloudinary** — image hosting for book covers & avatars
+
+### Backend
+- **Python / Flask** — REST API server
+- **Google Cloud Speech-to-Text** — voice transcription
+- **Google Cloud Text-to-Speech** — word pronunciation (Neural2 voices)
+- **Firebase Admin SDK** — server-side auth token verification
+
+---
+
+## 📁 Project Structure
 
 ```
-Reading-Literacy-App-Tutor/
-├── frontend/               # React Native mobile app (Expo)
-│   ├── App.js
-│   ├── package.json
-│   ├── Screen/            # App screens
-│   ├── components/        # Reusable components
-│   ├── Data/              # Local data and utilities
-│   └── assets/            # Images, fonts, animations
-│
-└── backend/               # Flask backend API
-        ├── app.py         # Main Flask application
-        ├── requirements.txt
-        ├── routes/        # API endpoints
-        ├── services/      # Business logic
-        ├── config/        # Firebase & configuration
-        └── utils/         # Helper utilities
+ella-app/
+├── App.js                      # Root component, navigation setup
+├── Screen/
+│   ├── StartUp.js              # Login screen (Email + Google)
+│   ├── SignUp.js               # Registration screen
+│   ├── RoleSelect.js           # Student or Teacher selection
+│   ├── NameEntry.js            # Name & age onboarding
+│   ├── AvatarSelect.js         # Character selection (Pink / Dino / Owl)
+│   ├── HomeScreen.js           # Main library & book browsing
+│   ├── OpenBook.js             # Book detail & edit/delete
+│   ├── ReadBook.js             # Reading session with speech recognition
+│   ├── Prizes.js               # Sticker shop (points-based rewards)
+│   ├── UserProfile.js          # Profile stats, progress, achievements
+│   ├── ManageClass.js          # Teacher: view enrolled students
+│   ├── TeacherBooks.js         # Student: view teacher-uploaded books
+│   ├── UploadBook.js           # Upload new books with cover image
+│   ├── EnrollModal.js          # Student class enrollment modal
+│   ├── Settings.js             # Audio, TTS voice, notifications
+│   ├── ContactUs.js            # Feedback / bug report form
+│   └── aboutElla.js            # App info & team credits
+├── hook/
+│   ├── MusicContext.js         # Global background music & audio context
+│   ├── useAppFonts.js          # Custom font loader (PixelifySans, Poppins, Mochi)
+│   └── useAuth.js              # Firebase auth state + Firestore profile hook
+├── utils/
+│   ├── speechHelper.js         # Speech-to-text API client & Levenshtein matching
+│   ├── libUtil.js              # Book recommendation & filtering logic
+│   └── scaling.js              # Responsive scaling utilities
+├── components/
+│   ├── Alerts.js               # EllAlert modal + useEllAlert hook
+│   └── Sidebar.js              # Navigation drawer component
+└── backend/
+    ├── app.py                  # Flask entry point
+    ├── services/
+    │   └── speech_service.py   # Google STT/TTS service wrapper
+    └── routes/
+        └── speech_routes.py    # /api/speech/* endpoints
 ```
 
-##  Getting Started
+---
 
-### Prerequisites
+## 🚀 Getting Started
 
-- **Frontend**: Node.js 16+, npm or yarn, Expo CLI
-- **Backend**: Python 3.8+, Firebase account, Google Cloud account
-- **Mobile**: iOS Simulator, Android Emulator, or Expo Go app
+### To install the app you can view the releases page
+[![GitHub Release](https://img.shields.io/github/v/release/Aexreii/ELLA-App)](https://github.com/Aexreii/ELLA-App/releases)
+[View Releases](https://github.com/Aexreii/ELLA-App/releases)
+
+
+
+### Prerequisites for local installation
+- Node.js 18+
+- Expo CLI (`npm install -g expo-cli`)
+- Python 3.10+
+- A Firebase project (Firestore + Authentication enabled)
+- Google Cloud project with Speech-to-Text and Text-to-Speech APIs enabled
 
 ### Frontend Setup
 
 ```bash
-# Navigate to frontend directory
-cd frontend
-
 # Install dependencies
 npm install
 
-# Start the development server
+# Start the Expo development server
 npx expo start
 
-# Or run on android
-npx expo run:android    # Android emulator
+# Set environment variables
+cp .env.example .env
+# Fill in firebase credentials.
 ```
 
 ### Backend Setup
 
 ```bash
-# Navigate to backend directory
-cd BackEnd/ELLA-Backend
+cd backend
 
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
 
-# Configure environment variables
+# Set environment variables
 cp .env.example .env
-# Edit .env with your Firebase and Google Cloud credentials
+# Fill in GOOGLE_APPLICATION_CREDENTIALS_JSON, SECRET_KEY, etc.
 
 # Run the server
 python app.py
 ```
 
+### Environment Variables (Backend)
 
-
-##APK File
-
-## 📚 Key Features
-
-### For Students
-- **Character Selection**: Choose from Owl, Dino, or Pink avatars
-- **Reading Library**: Access books categorized by difficulty (Beginner, Intermediate, Advanced)
-- **Interactive Reading**: Read sentence-by-sentence with pronunciation feedback
-- **Rewards System**: Earn points and unlock stickers for reading achievements
-- **Progress Tracking**: See your reading history and statistics
-- **Leaderboard**: Compete with other students
-
-### For Teachers
-- **Content Management**: Upload custom reading materials
-- **Class Codes**: Manage student enrollment
-- **Progress Monitoring**: Track student performance and reading habits
-- **Resource Sharing**: Share books with students
-
-### Technical Features
-- **Firebase Authentication**: Secure email and Google sign-in
-- **Firestore Database**: Real-time data synchronization
-- **Speech-to-Text**: Google Cloud Speech API integration
-- **RESTful API**: Clean, documented backend endpoints
-- **Responsive Design**: Optimized for various screen sizes
-
-## 📖 API Documentation
-
-Comprehensive API documentation is available at:
-- **[Backend API Documentation](BackEnd/ELLA-Backend/API_DOCUMENTATION.md)**
-- **[Backend Setup Guide](BackEnd/ELLA-Backend/README.md)**
-
-### Main Endpoints
-
-- **Authentication**: `/api/auth/*`
-- **User Management**: `/api/user/*`
-- **Books**: `/api/books/*`
-- **Reading Progress**: `/api/reading/*`
-- **Speech Recognition**: `/api/speech/*`
-- **Prizes & Rewards**: `/api/prizes/*`
-
-## 🎮 User Flow
-
-1. **Sign Up**: Create account with email or Google
-2. **Profile Setup**: Choose name, character (owl/dino/pink), and role
-3. **Browse Books**: View personalized recommendations
-4. **Start Reading**: Select a book and begin reading session
-5. **Practice Pronunciation**: Speak words and get instant feedback
-6. **Earn Rewards**: Complete sentences to earn points
-7. **Unlock Achievements**: Collect stickers and climb the leaderboard
-
-## 🎯 Point System
-
-- **Base Points**: 10 points per sentence read
-- **Difficulty Multiplier**: 
-  - Beginner: 1.0x
-  - Intermediate: 1.5x
-  - Advanced: 2.0x
-- **Accuracy Bonus**: Based on pronunciation correctness
-- **Formula**: `points = sentences × 10 × accuracy × difficulty_multiplier`
-
-## 🏆 Sticker Unlocking
-
-Stickers automatically unlock based on total points earned:
-- 🥉 Bronze Star: 0 points (starter)
-- 🥈 Silver Star: 100 points
-- 🥇 Gold Star: 200 points
-- 📖 Reading Master: 300 points
-- ✨ Word Wizard: 400 points
-- 🏆 Book Champion: 500 points
-- 🌟 Super Reader: 600 points
-- 👑 Ultimate Scholar: 700 points
-
-## 🗄️ Database Schema
-
-### User Model
-```javascript
-{
-  uid: string,
-  email: string,
-  name: string,
-  character: "owl" | "dino" | "pink",
-  role: "Student" | "Teacher",
-  points: number,              // Current available
-  totalPoints: number,         // All-time earned
-  enrolledCode: number?,       // Student class code
-  classCode: number?,          // Teacher class code
-  unlockedStickers: number[],
-  progress: [{
-    bookId: string,
-    sentencesRead: number,
-    totalSentences: number
-  }]
-}
-```
-
-### Book Model
-```javascript
-{
-  bookId: string,
-  title: string,
-  writer: string,
-  publisher: string,
-  difficulty: "Beginner" | "Intermediate" | "Advanced",
-  source: "app" | "Teacher" | "user",
-  contents: string[],          // Array of sentences
-  sentenceCount: number,
-  cover: string                // Image URL
-}
-```
-
-## 🔒 Environment Variables
-
-### Backend (.env)
-```env
-SECRET_KEY=your-secret-key
-FLASK_ENV=development
-PORT=5000
-FIREBASE_CREDENTIALS=path/to/firebase-credentials.json
-GOOGLE_APPLICATION_CREDENTIALS=path/to/google-credentials.json
-```
-
-## 🧪 Testing
-
-### Frontend
-```bash
-cd frontend
-npm test
-```
-
-### Backend
-```bash
-cd BackEnd/ELLA-Backend
-python -m pytest
-```
-
-## 📦 Tech Stack
-
-### Frontend
-- React Native (Expo)
-- React Navigation
-- Expo Image & Expo Font
-- React Native Safe Area Context
-- Expo Vector Icons
-
-### Backend
-- Flask 3.0
-- Firebase Admin SDK
-- Google Cloud Speech-to-Text
-- Python-dotenv
-- Flask-CORS
-
-### Database & Services
-- Firebase Authentication
-- Cloud Firestore
-- Google Cloud Speech API
-- Firebase Storage (for assets)
-
-## 🤝 Contributing
-
-1. Clone the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes
-4. Commit: `git commit -m "Add feature"`
-5. Push: `git push origin feature-name`
-6. Create a Pull Request
-
-## 📄 License
-
-This project is licensed under the 0BSD License.
-
-## 👥 Team
-
-Developed by BU Software Engineering Students for the Reading Literacy App Tutor project.
-
-## 📞 Support
-
-For setup issues or questions:
-- Frontend: Check `frontend/README.md`
-- Backend: Check `BackEnd/ELLA-Backend/README.md`
-- API: Check `BackEnd/ELLA-Backend/API_DOCUMENTATION.md`
-
-## 🔄 Migration Notes
-
-If you have an existing installation, see `BackEnd/ELLA-Backend/MIGRATION_GUIDE.md` for data migration instructions.
+| Variable | Description |
+|---|---|
+| `SECRET_KEY` | Flask secret key |
+| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Google Cloud service account JSON (stringified) |
+| `PORT` | Server port (default: 5000) |
 
 ---
 
-**Happy Reading! 📚✨**
-=======
-# ELLA-MVP
-English Literacy Learning App using STT technology for young learners.
->>>>>>> b42fbb0822695840d37cf779253beb4acf32bdbb
+## 🔑 Firebase Collections
+
+| Collection | Description |
+|---|---|
+| `users` | User profiles (name, age, role, points, character, progress) |
+| `books` | Book documents (title, contents array, cover URL, difficulty, source) |
+| `classes` | Teacher-created classes (code, teacherID, students array) |
+| `stickers` | Prize stickers available in the shop |
+| `reports` | Contact Us / feedback submissions |
+
+---
+
+## 🎮 Key Features
+
+### Authentication
+- Email/password sign-in and registration
+- Google OAuth sign-in via `@react-native-google-signin/google-signin`
+- Automatic onboarding flow: Role → Name/Age → Avatar → Home
+
+### Reading Mode (`ReadBook.js`)
+- Sentence-by-sentence reading with word highlighting
+- Voice recording via `expo-av` with platform-specific encoding (WAV on iOS, M4A on Android)
+- Levenshtein edit-distance word matching for robust speech recognition
+- Positive/negative audio feedback sounds
+- Progress and points saved to Firestore on completion
+
+### Speech Services (`speechHelper.js` + `speech_service.py`)
+- Audio sent as Base64 to `/api/speech/transcribe`
+- Google Speech-to-Text with phrase hints for accuracy
+- Dynamic word normalization using edit distance (no hardcoded maps)
+- TTS pronunciation playback via `/api/speech/pronounce` with 4 Neural2 voices
+
+### Book System
+- Books categorized as: `app/Ella`, `Teacher`, `student/User`
+- Difficulty levels: `Beginner`, `Intermediate`, `Advanced`
+- Teacher books linked to classes via `uploadedById`
+- Students see recommended books based on points thresholds (0 / 200 / 400)
+
+### Classroom
+- Teachers get a unique 8-character class code on role selection
+- Students enroll via `EnrollModal` by entering the code
+- Teachers view enrolled students via `ManageClass`
+- Students access teacher materials via `TeacherBooks`
+
+### Prizes
+- Students earn points for completing reading sessions
+- Points spent in the sticker shop (`Prizes.js`)
+- Sticker ownership stored in `ownedStickers[]` on user document
+
+---
+
+## 🎨 Design System
+
+| Token | Value |
+|---|---|
+| Primary Blue | `#60B5FF` |
+| Accent Orange | `#FF9149` |
+| Background | `#f2f2f2` |
+| Dark Text | `#1a1a2e` |
+| Font — Display | `PixelifySans` |
+| Font — Body | `Poppins` |
+| Font — Headings | `Mochi` |
+
+---
+
+## 📡 API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Health check |
+| `GET` | `/api/health` | Firebase connection status |
+| `POST` | `/api/speech/transcribe` | Transcribe audio (Base64) to text |
+| `POST` | `/api/speech/pronounce` | Synthesize word pronunciation (TTS) |
+| `POST` | `/api/speech/evaluate` | Evaluate pronunciation correctness |
+
+All `/api/speech/*` routes require a valid Firebase ID token in the `Authorization: Bearer <token>` header.
+
+---
+
+## 📱 Supported Platforms
+
+- Android (primary)
+- Tablet support with pillarbox layout (aspect ratio threshold: 1.6)
+
+---
+
+## 📄 License
+
+This project was developed as an academic capstone project. All rights reserved by the ELLA development team.
