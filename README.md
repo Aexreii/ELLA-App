@@ -4,7 +4,7 @@
 
 ---
 
-## 🌟 Overview
+## Overview
 
 **ELLA (English Literacy Learning App)** is a React Native mobile application designed to help young learners develop English reading and literacy skills. It features real-time speech recognition, gamified rewards, a digital library of books, and a classroom management system for teachers.
 
@@ -14,7 +14,7 @@ The app supports two user roles:
 
 ---
 
-## 🧑‍💻 Team
+## Team
 
 | Name | Role |
 |---|---|
@@ -26,7 +26,7 @@ The app supports two user roles:
 
 ---
 
-## 🏗️ Tech Stack
+## Tech Stack
 
 ### Frontend (Mobile)
 - **React Native** — cross-platform iOS & Android
@@ -88,10 +88,10 @@ ella-app/
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### To install the app you can view the releases page
-[![GitHub Release](https://img.shields.io/github/v/release/Aexreii/ELLA-App)](https://github.com/Aexreii/ELLA-App/releases)
+
 [View Releases](https://github.com/Aexreii/ELLA-App/releases)
 
 
@@ -143,7 +143,7 @@ python app.py
 
 ---
 
-## 🔑 Firebase Collections
+## Firebase Collections
 
 | Collection | Description |
 |---|---|
@@ -194,7 +194,7 @@ python app.py
 
 ---
 
-## 🎨 Design System
+## Design System
 
 | Token | Value |
 |---|---|
