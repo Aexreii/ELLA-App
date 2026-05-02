@@ -1,0 +1,12 @@
+.env
+.venv
+venv
+__pycache__
+*.pyc
+.git
+.gitignore
+test_speech.html
+API_DOCUMENTATION.md
+BACKEND_UPDATES.md
+MIGRATION_GUIDE.md
+README.md
