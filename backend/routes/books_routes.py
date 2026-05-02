@@ -5,6 +5,7 @@ Handles book catalog, book details, recommendations, and reading progress
 
 from flask import Blueprint, request, jsonify
 from config.firebase_config import get_db
+from firebase_admin import firestore
 from utils.decorators import require_auth
 from datetime import datetime
 
@@ -73,6 +74,7 @@ def get_book_details(current_user, book_id):
         
         book_data = book_doc.to_dict()
         book_data['bookId'] = book_doc.id
+        book_data['id'] = book_doc.id # For frontend compatibility
         
         return jsonify({
             'success': True,
@@ -82,6 +84,77 @@ def get_book_details(current_user, book_id):
     except Exception as e:
         print(f"Get book details error: {str(e)}")
         return jsonify({'error': 'Failed to get book details'}), 500
+
+@books_bp.route('/book/<book_id>', methods=['PUT'])
+@require_auth
+def update_book(current_user, book_id):
+    """Update an existing book"""
+    try:
+        uid = current_user['uid']
+        data = request.get_json()
+        
+        db = get_db()
+        book_ref = db.collection('books').document(book_id)
+        book_doc = book_ref.get()
+        
+        if not book_doc.exists:
+            return jsonify({'error': 'Book not found'}), 404
+        
+        # Security: Only allow uploader or admin/teacher to update
+        # For now, we'll just check if it's the uploader if it's a teacher upload
+        book_data = book_doc.to_dict()
+        if book_data.get('source') == 'Teacher' and book_data.get('uploadedBy') != uid:
+             # Check if user is teacher
+             user_doc = db.collection('users').document(uid).get()
+             if user_doc.to_dict().get('role') != 'Teacher':
+                return jsonify({'error': 'Unauthorized to update this book'}), 403
+        
+        # Prevent updating core fields like uploadedBy unless admin
+        if 'uploadedBy' in data:
+            del data['uploadedBy']
+            
+        data['updatedAt'] = datetime.now()
+        book_ref.update(data)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Book updated successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"Update book error: {str(e)}")
+        return jsonify({'error': 'Failed to update book'}), 500
+
+@books_bp.route('/book/<book_id>', methods=['DELETE'])
+@require_auth
+def delete_book(current_user, book_id):
+    """Delete a book"""
+    try:
+        uid = current_user['uid']
+        db = get_db()
+        book_ref = db.collection('books').document(book_id)
+        book_doc = book_ref.get()
+        
+        if not book_doc.exists:
+            return jsonify({'error': 'Book not found'}), 404
+            
+        # Security: Only uploader or teacher can delete
+        book_data = book_doc.to_dict()
+        if book_data.get('uploadedBy') != uid:
+             user_doc = db.collection('users').document(uid).get()
+             if user_doc.to_dict().get('role') != 'Teacher':
+                return jsonify({'error': 'Unauthorized to delete this book'}), 403
+        
+        book_ref.delete()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Book deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        print(f"Delete book error: {str(e)}")
+        return jsonify({'error': 'Failed to delete book'}), 500
 
 @books_bp.route('/recommended', methods=['GET'])
 @require_auth
@@ -265,7 +338,19 @@ def upload_book(current_user):
         book_ref = db.collection('books').document()
         book_ref.set(book_data)
         
-        book_data['bookId'] = book_ref.id
+        book_id = book_ref.id
+        
+        # If teacher uploaded, add to their class materials
+        if data['source'] == 'Teacher':
+            classes = db.collection('classes').where('teacherID', '==', uid).limit(1).get()
+            if classes:
+                class_ref = db.collection('classes').document(classes[0].id)
+                class_ref.update({
+                    'bookId': firestore.ArrayUnion([book_id])
+                })
+        
+        book_data['bookId'] = book_id
+        book_data['id'] = book_id # For compatibility
         
         return jsonify({
             'success': True,

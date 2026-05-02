@@ -16,16 +16,8 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { ImageBackground } from "react-native";
 import Sidebar from "../components/Sidebar";
 import AppHeader from "../components/AppHeader";
-import { getLastUnfinishedBook, getRecommendedBooks } from "../utils/libUtil";
 import { useScale } from "../utils/scaling";
-import { auth } from "../firebase";
-import {
-  getFirestore,
-  doc,
-  getDoc,
-  collection,
-  getDocs,
-} from "firebase/firestore";
+import api from "../utils/api";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
@@ -33,10 +25,15 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
 
   const [currUser, setCurrUser] = useState(null);
-  const [books, setBooks] = useState([]);
+  const [categorizedBooks, setCategorizedBooks] = useState({
+    recommended: [],
+    teacherMaterials: [],
+    studentUploads: [],
+    appBooks: [],
+  });
   const [currRoute, setCurrRoute] = useState(1);
 
-  const [enrolledClassId, setEnrolledClassId] = useState(null);
+  const [enrolledClass, setEnrolledClass] = useState(null);
   const [classTeacherId, setClassTeacherId] = useState(null);
 
   const navigation = useNavigation();
@@ -55,43 +52,26 @@ export default function HomeScreen() {
 
   // ── Derived data ───────────────────────────────────────────
   const isTeacher = currUser?.role === "Teacher";
+  const enrolledClassId = currUser?.classEnrolled;
   const isEnrolled = !!enrolledClassId;
 
-  // ── FIX: only check uploadedById — teacherId doesn't exist on book docs ──
-  const teacherOwnBooks = books.filter(
-    (b) =>
-      (b.source === "Teacher" || b.source === "teacher") &&
-      b.uploadedById === currUser?.uid,
-  );
+  const { recommended, teacherMaterials, studentUploads, appBooks } = categorizedBooks;
 
-  // Student view: books from libUtil
-  const { recommended, teacherMaterials, studentUploads, appBooks } = currUser
-    ? getRecommendedBooks(currUser, books)
-    : {
-        recommended: [],
-        teacherMaterials: [],
-        studentUploads: [],
-        appBooks: [],
-      };
+  const teacherOwnBooks = isTeacher 
+    ? teacherMaterials.filter(b => b.uploadedBy === currUser?.uid)
+    : [];
 
-  const myStudentUploads = studentUploads.filter(
-    (b) => b.uploadedById === currUser?.uid,
-  );
-
-  const studentBooks = studentUploads;
+  const myStudentUploads = !isTeacher
+    ? studentUploads.filter((b) => b.uploadedBy === currUser?.uid)
+    : [];
 
   const enrolledTeacherBooks =
     isEnrolled && classTeacherId
-      ? teacherMaterials.filter((b) => b.uploadedById === classTeacherId)
+      ? teacherMaterials.filter((b) => b.uploadedBy === classTeacherId)
       : [];
 
-  const ellaBooks = appBooks;
-
-  // Last unfinished book (student only)
-  const currBook =
-    !isTeacher && currUser
-      ? getLastUnfinishedBook(currUser, books) || books[0] || null
-      : null;
+  // Last unfinished book (student only) - Now fetched directly from backend
+  const [currBook, setCurrBook] = useState(null);
 
   // ── Sidebar ────────────────────────────────────────────────
   const handleMenuPress = () => {
@@ -128,58 +108,56 @@ export default function HomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       setCurrRoute(1);
-      fetchUserData();
+      loadAllData();
     }, []),
   );
 
-  // ── Fetch user + class info ────────────────────────────────
-  // ── FIX: mirrors ManageClass.js logic — fetch class doc by ID from
-  // classEnrolled field, then read teacherId from the class doc ──
-  const fetchUserData = async () => {
+  const loadAllData = async () => {
     try {
-      const user = auth.currentUser;
-      if (!user) return;
-      const db = getFirestore();
-      const docSnap = await getDoc(doc(db, "users", user.uid));
-      if (!docSnap.exists()) return;
+      // 1. Fetch User Profile
+      const userResponse = await api.auth.getUser();
+      if (!userResponse.success) return;
+      const userData = userResponse.user;
+      setCurrUser(userData);
 
-      const data = docSnap.data();
-      setCurrUser({ uid: user.uid, ...data });
-
-      const classId = data.classEnrolled ?? null;
-      setEnrolledClassId(classId);
-
-      if (classId) {
-        const classSnap = await getDoc(doc(db, "classes", classId));
-        if (classSnap.exists()) {
-          setClassTeacherId(classSnap.data().teacherID ?? null);
-        } else {
-          setClassTeacherId(null);
+      // 2. Fetch Class Details if enrolled
+      if (userData.classEnrolled) {
+        try {
+          const classResponse = await api.class.getDetails(userData.classEnrolled);
+          if (classResponse.success) {
+            setEnrolledClass(classResponse.class);
+            setClassTeacherId(classResponse.class.teacherID);
+          }
+        } catch (e) {
+          console.log("Error fetching class details:", e);
         }
-      } else {
-        setClassTeacherId(null);
+      }
+
+      // 3. Fetch Categorized Books
+      const booksResponse = await api.books.getRecommended();
+      if (booksResponse.success) {
+        setCategorizedBooks({
+          recommended: booksResponse.recommended || [],
+          teacherMaterials: booksResponse.teacherMaterials || [],
+          studentUploads: booksResponse.studentUploads || [],
+          appBooks: booksResponse.appBooks || [],
+        });
+      }
+
+      // 4. Fetch last unfinished book
+      if (userData.role !== 'Teacher') {
+        const lastBookResponse = await api.books.getLastUnfinished();
+        if (lastBookResponse.success && lastBookResponse.book) {
+          setCurrBook(lastBookResponse.book);
+        }
       }
     } catch (error) {
-      console.log("Error fetching user:", error);
+      console.log("Error loading home data:", error);
     }
   };
 
   useEffect(() => {
-    fetchUserData();
-  }, []);
-
-  // ── Fetch books ────────────────────────────────────────────
-  useEffect(() => {
-    const fetchBooks = async () => {
-      try {
-        const db = getFirestore();
-        const booksSnapshot = await getDocs(collection(db, "books"));
-        setBooks(booksSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (error) {
-        console.log("Error fetching books:", error);
-      }
-    };
-    fetchBooks();
+    loadAllData();
   }, []);
 
   const handleOpenBook = (book, user) =>
@@ -188,6 +166,7 @@ export default function HomeScreen() {
   const handleUploadBook = () => {
     navigation.navigate("UploadBook", { currUser });
   };
+
 
   const s = getStyles(scale, verticalScale);
 

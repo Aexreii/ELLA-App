@@ -9,25 +9,14 @@ import {
   BackHandler,
   Animated,
 } from "react-native";
-import { Image as RNImage } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import { Ionicons } from "@expo/vector-icons";
 import { useMusic } from "../hook/MusicContext";
 import { useScale } from "../utils/scaling";
-import { auth } from "../firebase";
-import {
-  getFirestore,
-  collection,
-  doc,
-  setDoc,
-  updateDoc,
-  getDoc,
-  increment,
-  serverTimestamp,
-  writeBatch,
-} from "firebase/firestore";
+import api from "../utils/api";
 
+//wag ilipat
 import {
   BACKEND_URL,
   RECORDING_OPTIONS,
@@ -37,139 +26,87 @@ import {
 
 import Ellalert, { useEllAlert } from "../components/Alerts";
 
-// ─────────────────────────────────────────────────────────────
-// Feedback messages
-// ─────────────────────────────────────────────────────────────
-const CORRECT_MESSAGES = [
-  "Good job!",
-  "That's right!",
-  "Well done!",
-  "Keep it up!",
-  "Excellent!",
-  "Perfect!",
-];
-
-const WRONG_MESSAGES = [
-  "Try again!",
-  "Almost there!",
-  "Give it another go!",
-  "Don't give up!",
-  "Try once more!",
-];
-
-const VOICE_FILES = {
-  correct_0: require("../assets/sounds/1.mp3"),
-  correct_1: require("../assets/sounds/2.mp3"),
-  correct_2: require("../assets/sounds/3.mp3"),
-  correct_3: require("../assets/sounds/4.mp3"),
-  correct_4: require("../assets/sounds/5.mp3"),
-  correct_5: require("../assets/sounds/6.mp3"),
-  wrong_0: require("../assets/sounds/7.mp3"),
-  wrong_1: require("../assets/sounds/8.mp3"),
-  wrong_2: require("../assets/sounds/9.mp3"),
-  wrong_3: require("../assets/sounds/10.mp3"),
-  wrong_4: require("../assets/sounds/11.mp3"),
-};
-
-// In ReadBook.jsx — replace alignWords()
-
-function editDistance(a, b) {
-  const dp = Array.from({ length: a.length + 1 }, (_, i) =>
-    Array.from({ length: b.length + 1 }, (_, j) =>
-      i === 0 ? j : j === 0 ? i : 0,
-    ),
-  );
-  for (let i = 1; i <= a.length; i++)
-    for (let j = 1; j <= b.length; j++)
-      dp[i][j] =
-        a[i - 1] === b[j - 1]
-          ? dp[i - 1][j - 1]
-          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-  return dp[a.length][b.length];
-}
-
-function wordsMatch(spoken, expected) {
-  if (spoken === expected) return true;
-  // Allow 1 edit for words 4+ chars, exact for short words to avoid "to"↔"do"
-  const threshold = expected.length >= 4 ? 1 : 0;
-  return editDistance(spoken, expected) <= threshold;
-}
-
-function alignWords(expectedWords, spokenWords) {
-  const exp = expectedWords.map(cleanWord);
-  const spk = spokenWords.map(cleanWord).filter(Boolean);
-
-  const m = exp.length,
-    n = spk.length;
-  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = wordsMatch(exp[i - 1], spk[j - 1]) // ← fuzzy instead of ===
-        ? dp[i - 1][j - 1] + 1
-        : Math.max(dp[i - 1][j], dp[i][j - 1]);
-
-  // backtrack (same as before)
-  const matched = new Array(m).fill(false);
-  let i = m,
-    j = n;
-  while (i > 0 && j > 0) {
-    if (wordsMatch(exp[i - 1], spk[j - 1])) {
-      matched[i - 1] = true;
-      i--;
-      j--;
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) i--;
-    else j--;
-  }
-
-  return matched.map((hit) => (hit ? "correct" : "wrong"));
-}
-
-function cleanWord(w) {
-  return w.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-}
-
-const ROW_SEP = "||";
-
-function flattenWordResults(wordResults) {
-  return wordResults.reduce((acc, row, i) => {
-    if (i > 0) acc.push(ROW_SEP);
-    return acc.concat(row.map((r) => r ?? "null"));
-  }, []);
-}
-
-function unflattenWordResults(flat, book) {
-  const rows = [];
-  let current = [];
-  for (const val of flat) {
-    if (val === ROW_SEP) {
-      rows.push(current);
-      current = [];
-    } else {
-      current.push(val === "null" ? null : val);
-    }
-  }
-  rows.push(current);
-
-  return book.contents.map((sentence, sIndex) => {
-    const words = sentence.split(" ");
-    const savedRow = rows[sIndex];
-    if (!savedRow || savedRow.length !== words.length) {
-      return words.map(() => null);
-    }
-    return savedRow;
-  });
-}
-
-// ─────────────────────────────────────────────────────────────
-// Character assets (defined outside component — stable refs)
-// ─────────────────────────────────────────────────────────────
+// ── Assets ────────────────────────────────────────────────
 const CHARACTER_ASSETS = {
-  pink: require("../assets/animations/jump_pink.gif"),
-  dino: require("../assets/animations/jump_dino.gif"),
-  owl: require("../assets/animations/jump_owl.gif"),
+  pink: require("../assets/animations/run_pink.gif"),
+  dino: require("../assets/animations/run_dino.gif"),
+  owl: require("../assets/animations/run_owl.gif"),
 };
 const CHARACTER_KEYS = Object.keys(CHARACTER_ASSETS);
+
+// Feedback messages
+const CORRECT_MESSAGES = [
+  "Spot on! Well read!",
+  "Amazing! Keep it up!",
+  "Great job! Perfect!",
+  "You're a reading star!",
+];
+const WRONG_MESSAGES = [
+  "Almost there! Try again.",
+  "Nearly perfect! Once more?",
+  "Give it another shot!",
+  "Let's try that one again.",
+];
+
+// In ReadBook.jsx — replace alignWords()
+function alignWords(originalWords, spokenWords) {
+  const cleanSpoken = spokenWords.map((w) =>
+    w.toLowerCase().replace(/[^\w]/g, ""),
+  );
+  const results = [];
+  let spokenIndex = 0;
+
+  for (let i = 0; i < originalWords.length; i++) {
+    const original = originalWords[i].toLowerCase().replace(/[^\w]/g, "");
+
+    // Look ahead in spoken words (up to 3 positions) for a match
+    let found = false;
+    for (let j = 0; j < 3; j++) {
+      if (cleanSpoken[spokenIndex + j] === original) {
+        results.push("correct");
+        spokenIndex += j + 1;
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      results.push("wrong");
+    }
+  }
+  return results;
+}
+
+function cleanWord(word) {
+  return word.toLowerCase().replace(/[^\w]/g, "");
+}
+
+// ── Serialization Helpers ─────────────────────────────────
+function flattenWordResults(wordResults) {
+  // wordResults is [[null, 'correct'], [null, null], ...]
+  // we want to store it as an object { s0_w1: 'correct', ... }
+  const flat = {};
+  wordResults.forEach((sentence, sIdx) => {
+    sentence.forEach((res, wIdx) => {
+      if (res) flat[`s${sIdx}_w${wIdx}`] = res;
+    });
+  });
+  return flat;
+}
+
+function unflattenWordResults(flatObj, book) {
+  const restored = book.contents.map((s) => s.split(" ").map(() => null));
+  if (!flatObj) return restored;
+  Object.entries(flatObj).forEach(([key, val]) => {
+    const [sPart, wPart] = key.split("_");
+    const sIdx = parseInt(sPart.substring(1));
+    const wIdx = parseInt(wPart.substring(1));
+    if (restored[sIdx] !== undefined && restored[sIdx][wIdx] !== undefined) {
+      restored[sIdx][wIdx] = val;
+    }
+  });
+  return restored;
+}
 
 export default function ReadBook({ route, navigation }) {
   const { book, currUser } = route.params;
@@ -250,18 +187,13 @@ export default function ReadBook({ route, navigation }) {
 
   const loadProgressAndCreateSession = async () => {
     try {
-      const db = getFirestore();
-      const uid = auth.currentUser?.uid;
-      if (!uid) {
-        setProgressLoaded(true);
-        return;
-      }
-
-      const progressId = `${uid}_${book.id}`;
-      const progressSnap = await getDoc(doc(db, "userProgress", progressId));
-
-      if (progressSnap.exists()) {
-        const saved = progressSnap.data();
+      // Use backend API instead of direct Firestore
+      const response = await api.reading.startSession(book.id);
+      
+      if (response.success) {
+        sessionIdRef.current = response.sessionId;
+        const saved = response.userProgress;
+        
         const savedSentence = saved.currentSentence ?? 0;
         const savedFlat = saved.wordResults ?? null;
 
@@ -272,59 +204,19 @@ export default function ReadBook({ route, navigation }) {
 
         if (savedFlat) {
           const restored = unflattenWordResults(savedFlat, book);
-
           restored.forEach((row, sIndex) => {
             if (row.every((r) => r === "correct")) {
               awardedSentencesRef.current[sIndex] = true;
             }
           });
+          // For results in the current session, we reset to null so they can earn points again
           const reset = restored.map((row) => row.map(() => null));
           setWordResults(reset);
-        } else {
-          const emptyFlat = flattenWordResults(
-            book.contents.map((s) => s.split(" ").map(() => null)),
-          );
-          await updateDoc(doc(db, "userProgress", progressId), {
-            wordResults: emptyFlat,
-          });
         }
-      } else {
-        const emptyFlat = flattenWordResults(
-          book.contents.map((s) => s.split(" ").map(() => null)),
-        );
-        await setDoc(doc(db, "userProgress", progressId), {
-          userId: uid,
-          bookId: book.id,
-          currentSentence: 0,
-          wordResults: emptyFlat,
-          totalSentences: book.contents.length,
-          completed: false,
-          lastReadAt: serverTimestamp(),
-          totalSessions: 0,
-          totalTimeSeconds: 0,
-        });
       }
 
       setProgressLoaded(true);
-
-      const sessionTimestamp = Date.now();
-      const newSessionId = `${uid}_${sessionTimestamp}`;
-      sessionIdRef.current = newSessionId;
-      sessionStartRef.current = sessionTimestamp;
-
-      await setDoc(doc(db, "readingSessions", newSessionId), {
-        userId: uid,
-        bookId: book.id,
-        classId: currUser?.enrolledClasses?.[0] ?? null,
-        startedAt: serverTimestamp(),
-        endedAt: null,
-        sentencesRead: 0,
-        totalSentences: book.contents.length,
-        wordsTapped: 0,
-        recordingsAttempted: 0,
-        pointsEarned: 0,
-        completed: false,
-      });
+      sessionStartRef.current = Date.now();
     } catch (error) {
       console.log("loadProgress error:", error);
       setProgressLoaded(true);
@@ -351,101 +243,28 @@ export default function ReadBook({ route, navigation }) {
   const saveAndExit = async (isFinished = false) => {
     setIsSaving(true);
     try {
-      const db = getFirestore();
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
-
       const elapsedSeconds = Math.floor(
         (Date.now() - sessionStartRef.current) / 1000,
       );
-      const totalWordTaps = Object.values(wordTapCountsRef.current).reduce(
-        (a, b) => a + b,
-        0,
-      );
       const snapshotSentence = currentSentenceRef.current;
-      const isCompleted =
-        isFinished || sentencesReadRef.current === book.contents.length;
-
+      
       const serializedWordResults = flattenWordResults(
         wordResultsRef.current.map((sentence) =>
           sentence.map((r) => (r === "orange" ? null : r)),
         ),
       );
 
-      const batch = writeBatch(db);
-      const progressId = `${uid}_${book.id}`;
-      const progressRef = doc(db, "userProgress", progressId);
-      const progressSnap = await getDoc(progressRef);
-
-      if (progressSnap.exists()) {
-        const alreadyCompleted = progressSnap.data().completed === true;
-        batch.update(progressRef, {
-          currentSentence: snapshotSentence,
-          wordResults: serializedWordResults,
-          lastReadAt: serverTimestamp(),
-          completed: alreadyCompleted ? true : isCompleted,
-          totalSessions: increment(1),
-          totalTimeSeconds: increment(elapsedSeconds),
-        });
-      } else {
-        batch.set(progressRef, {
-          userId: uid,
-          bookId: book.id,
-          currentSentence: snapshotSentence,
-          wordResults: serializedWordResults,
-          totalSentences: book.contents.length,
-          completed: isCompleted,
-          lastReadAt: serverTimestamp(),
-          totalSessions: 1,
-          totalTimeSeconds: elapsedSeconds,
-        });
-      }
-
-      if (sessionIdRef.current) {
-        batch.update(doc(db, "readingSessions", sessionIdRef.current), {
-          endedAt: serverTimestamp(),
-          sentencesRead: sentencesReadRef.current,
-          wordsTapped: totalWordTaps,
-          completed: isCompleted,
-        });
-      }
-
-      batch.update(doc(db, "users", uid), {
-        lastReadBook: book.id,
+      // Use backend API instead of direct Firestore
+      await api.reading.saveSession({
+        bookId: book.id,
+        sessionId: sessionIdRef.current,
+        currentSentence: snapshotSentence,
+        wordResults: serializedWordResults,
+        sentencesRead: sentencesReadRef.current,
+        elapsedSeconds,
+        isFinished,
       });
 
-      await batch.commit();
-
-      const wordEventPromises = Object.entries(wordTapCountsRef.current).map(
-        async ([word, tapCount]) => {
-          const wordEventId = `${uid}_${book.id}_${cleanWord(word)}`;
-          const wordRef = doc(db, "wordEvents", wordEventId);
-          try {
-            const wordSnap = await getDoc(wordRef);
-            if (wordSnap.exists()) {
-              return updateDoc(wordRef, {
-                tapCount: increment(tapCount),
-                lastTappedAt: serverTimestamp(),
-              });
-            } else {
-              return setDoc(wordRef, {
-                userId: uid,
-                bookId: book.id,
-                sessionId: sessionIdRef.current ?? null,
-                word: cleanWord(word),
-                tapCount,
-                lastTappedAt: serverTimestamp(),
-              });
-            }
-          } catch (e) {
-            console.log("wordEvent error:", e);
-          }
-        },
-      );
-
-      Promise.all(wordEventPromises).catch((e) =>
-        console.log("wordEvents batch error:", e),
-      );
     } catch (error) {
       console.log("saveAndExit error:", error);
     } finally {
@@ -453,63 +272,64 @@ export default function ReadBook({ route, navigation }) {
     }
   };
 
+  // ── Back button ──────────────────────────────────────────
   useEffect(() => {
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+    const backAction = () => {
       handleBackPress();
       return true;
-    });
-    return () => sub.remove();
-  }, []);
+    };
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      backAction,
+    );
+    return () => backHandler.remove();
+  }, [currentSentence, wordResults]);
 
   const handleBackPress = () => {
     showAlert({
       type: "confirm",
-      title: "Stop Reading?",
-      message: "Your progress will be saved.",
+      title: "Exit Reading?",
+      message: "Your progress will be saved automatically.",
       buttons: [
-        { text: "Keep Reading", style: "cancel", color: "#FF9149" },
+        { text: "Keep Reading", style: "cancel" },
         {
           text: "Exit",
           style: "destructive",
           onPress: async () => {
             await saveAndExit();
             resumeMusic();
-            navigation.navigate("HomeScreen");
+            navigation.goBack();
           },
         },
       ],
     });
   };
 
-  // ─────────────────────────────────────────────────────────
-  // 3. Avatar slide-up on feedback
-  // ─────────────────────────────────────────────────────────
+  // ── Avatar slide-up on feedback ──────────────────────────
   const showAvatar = () => {
-    if (avatarHideTimer.current) clearTimeout(avatarHideTimer.current);
-
-    Animated.spring(avatarSlideAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 120,
-      friction: 10,
-    }).start();
-
-    avatarVisibleRef.current = true;
+    if (avatarVisibleRef.current) {
+      if (avatarHideTimer.current) clearTimeout(avatarHideTimer.current);
+    } else {
+      avatarVisibleRef.current = true;
+      Animated.spring(avatarSlideAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+      }).start();
+    }
 
     avatarHideTimer.current = setTimeout(() => {
+      avatarVisibleRef.current = false;
       Animated.timing(avatarSlideAnim, {
         toValue: 0,
-        duration: 2000,
+        duration: 400,
         useNativeDriver: true,
-      }).start(() => {
-        avatarVisibleRef.current = false;
-      });
-    }, 2000);
+      }).start();
+    }, 4000);
   };
 
-  // ─────────────────────────────────────────────────────────
-  // 4. Avatar feedback + voice
-  // ─────────────────────────────────────────────────────────
+  // ── Avatar feedback + voice ────────────────────────────
   const showFeedback = async (type) => {
     if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
 
@@ -523,58 +343,50 @@ export default function ReadBook({ route, navigation }) {
     Animated.spring(feedbackAnim, {
       toValue: 1,
       useNativeDriver: true,
-      tension: 140,
-      friction: 9,
+      tension: 120,
+      friction: 7,
     }).start();
 
-    const voiceKey = `${type}_${msgIndex}`;
-    if (VOICE_FILES[voiceKey]) {
-      try {
-        if (voiceSoundRef.current) {
-          await voiceSoundRef.current.stopAsync().catch(() => {});
-          await voiceSoundRef.current.unloadAsync().catch(() => {});
-          voiceSoundRef.current = null;
-        }
-        const { sound } = await Audio.Sound.createAsync(VOICE_FILES[voiceKey], {
-          shouldPlay: false,
-        });
-        await sound.setVolumeAsync(soundVolume ?? 0.8);
-        await sound.playAsync();
-        voiceSoundRef.current = sound;
-        sound.setOnPlaybackStatusUpdate((st) => {
-          if (st.didJustFinish) sound.unloadAsync();
-        });
-      } catch (e) {
-        console.log("Voice error:", e);
+    try {
+      if (voiceSoundRef.current) {
+        await voiceSoundRef.current.unloadAsync();
       }
+      const soundFile =
+        type === "correct"
+          ? require("../assets/sounds/gjob.mp3")
+          : require("../assets/sounds/tagain.mp3");
+      const { sound } = await Audio.Sound.createAsync(soundFile);
+      voiceSoundRef.current = sound;
+      await sound.setVolumeAsync(soundVolume);
+      await sound.playAsync();
+    } catch (e) {
+      console.log("Feedback sound error:", e);
     }
 
     feedbackTimer.current = setTimeout(() => {
       Animated.timing(feedbackAnim, {
         toValue: 0,
-        duration: 2000,
+        duration: 300,
         useNativeDriver: true,
       }).start(() => setFeedback(null));
-    }, 2000);
+    }, 3500);
   };
 
-  // ─────────────────────────────────────────────────────────
-  // 5. Points pop animation
-  // ─────────────────────────────────────────────────────────
-  const triggerPointsPop = (points = 3) => {
-    setShowPointsPop(points);
+  // ── Points popup ───────────────────────────────────────
+  const triggerPointsPop = (pts) => {
+    setShowPointsPop(true);
     pointsPopAnim.setValue(0);
     Animated.sequence([
       Animated.spring(pointsPopAnim, {
         toValue: 1,
         useNativeDriver: true,
-        tension: 160,
+        tension: 150,
         friction: 6,
       }),
-      Animated.delay(600),
+      Animated.delay(1200),
       Animated.timing(pointsPopAnim, {
         toValue: 0,
-        duration: 1500,
+        duration: 300,
         useNativeDriver: true,
       }),
     ]).start(() => setShowPointsPop(false));
@@ -592,17 +404,8 @@ export default function ReadBook({ route, navigation }) {
     sessionPointsRef.current += finalPoints; // track session total
     triggerPointsPop(finalPoints);
     try {
-      const db = getFirestore();
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
-      await updateDoc(doc(db, "users", uid), {
-        points: increment(finalPoints),
-      });
-      if (sessionIdRef.current) {
-        await updateDoc(doc(db, "readingSessions", sessionIdRef.current), {
-          pointsEarned: increment(finalPoints),
-        });
-      }
+      // Use backend API instead of direct Firestore
+      await api.reading.awardPoints(sessionIdRef.current, finalPoints);
     } catch (e) {
       console.log("Points update error:", e);
     }
@@ -613,8 +416,10 @@ export default function ReadBook({ route, navigation }) {
   // ─────────────────────────────────────────────────────────
   const handleMarkCorrect = () => {
     const word = sentenceWords[activeWordIndex];
-    const key = cleanWord(word);
-    wordTapCountsRef.current[key] = (wordTapCountsRef.current[key] ?? 0) + 1;
+    
+    // Use backend API for word event
+    api.reading.recordWordEvent(book.id, sessionIdRef.current, word, 1)
+      .catch(e => console.log("word event error:", e));
 
     const updatedResults = wordResults[currentSentence].map((r, i) =>
       i === activeWordIndex ? "correct" : r,
@@ -647,8 +452,10 @@ export default function ReadBook({ route, navigation }) {
   // ─────────────────────────────────────────────────────────
   const handleMarkWrong = () => {
     const word = sentenceWords[activeWordIndex];
-    const key = cleanWord(word);
-    wordTapCountsRef.current[key] = (wordTapCountsRef.current[key] ?? 0) + 1;
+    
+    // Use backend API for word event
+    api.reading.recordWordEvent(book.id, sessionIdRef.current, word, 1)
+      .catch(e => console.log("word event error:", e));
 
     setWordResults((prev) => {
       const next = prev.map((s) => [...s]);
@@ -660,43 +467,32 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
-  // 8. Tap a word → highlight orange briefly
+  // 8. Word press
   // ─────────────────────────────────────────────────────────
-  const handleWordPress = async (index) => {
-    if (wordResults[currentSentence][index] === "correct") return;
-
-    setWordResults((prev) => {
-      const next = prev.map((s) => [...s]);
-      next[currentSentence][index] = "orange";
-      return next;
-    });
-
+  const handleWordPress = async (word, index) => {
+    setActiveWordIndex(index);
     try {
-      const word = sentenceWords[index];
-      const result = await pronounceWord(word, ttsVoice);
+      await pronounceWord(word, ttsVoice);
+      
+      // Update tap count
+      const key = cleanWord(word);
+      wordTapCountsRef.current[key] = (wordTapCountsRef.current[key] ?? 0) + 1;
+      
+      // Also record in backend
+      api.reading.recordWordEvent(book.id, sessionIdRef.current, word, 1)
+        .catch(() => {});
 
-      if (result?.audio) {
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: `data:audio/mp3;base64,${result.audio}` },
-          { shouldPlay: true, volume: soundVolume ?? 0.8 },
-        );
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.didJustFinish) sound.unloadAsync();
-        });
-      }
-    } catch (e) {
-      console.log("[TTS] error:", e);
-    }
-
-    setTimeout(() => {
       setWordResults((prev) => {
         const next = prev.map((s) => [...s]);
-        if (next[currentSentence][index] === "orange") {
-          next[currentSentence][index] = null;
+        const currentRes = next[currentSentence][index];
+        if (currentRes !== "correct") {
+          next[currentSentence][index] = "orange";
         }
         return next;
       });
-    }, 800);
+    } catch (e) {
+      console.log("TTS error:", e);
+    }
   };
 
   // ─────────────────────────────────────────────────────────
@@ -830,12 +626,10 @@ export default function ReadBook({ route, navigation }) {
         return next;
       });
 
+      // Use backend API to record attempt
       if (sessionIdRef.current) {
-        const db = getFirestore();
         recordingsCountRef.current += 1;
-        updateDoc(doc(db, "readingSessions", sessionIdRef.current), {
-          recordingsAttempted: increment(1),
-        }).catch(() => {});
+        api.reading.recordAttempt(sessionIdRef.current).catch(() => {});
       }
 
       const allCorrect = mergedResults.every((r) => r === "correct");
@@ -863,37 +657,218 @@ export default function ReadBook({ route, navigation }) {
     }
   };
 
-  // ─────────────────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────────────────
-  const s = getStyles(scale, verticalScale);
-
-  const avatarTranslateY = avatarSlideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [scale(120), 0],
-  });
+  const handleCongratsDone = () => {
+    resumeMusic();
+    navigation.replace("HomeScreen");
+  };
 
   if (!progressLoaded) {
     return (
-      <View style={[s.container, { justifyContent: "center" }]}>
-        <Text style={s.loadingText}>Loading...</Text>
+      <View style={s.loader}>
+        <ActivityIndicator size="large" color="#60B5FF" />
       </View>
     );
   }
 
+  const s = getStyles(scale, verticalScale);
+
   return (
     <View style={s.container}>
-      {/* ── Saving overlay ── */}
-      <Modal transparent visible={isSaving} animationType="fade">
-        <View style={s.savingOverlay}>
-          <View style={s.savingBox}>
-            <ActivityIndicator size="large" color="#FF9149" />
-            <Text style={s.savingText}>Saving your progress…</Text>
+      <View style={s.header}>
+        <TouchableOpacity style={s.backButton} onPress={handleBackPress}>
+          <Ionicons name="arrow-back" size={scale(24)} color="#333" />
+        </TouchableOpacity>
+        <View style={s.progressTrack}>
+          <View
+            style={[
+              s.progressBar,
+              { width: `${((currentSentence + 1) / book.contents.length) * 100}%` },
+            ]}
+          />
+        </View>
+        <View style={s.badge}>
+          <Image
+            source={require("../assets/icons/diamond.png")}
+            style={s.diamond}
+          />
+          <Text style={s.badgeText}>{localPoints}</Text>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={s.content}>
+        <View style={s.sentenceCard}>
+          <View style={s.wordsContainer}>
+            {sentenceWords.map((word, i) => {
+              const res = currentWordResults[i];
+              const isActive = i === activeWordIndex;
+              return (
+                <TouchableOpacity
+                  key={i}
+                  onPress={() => handleWordPress(word, i)}
+                  style={[
+                    s.wordWrapper,
+                    isActive && s.wordWrapperActive,
+                    res === "correct" && s.wordWrapperCorrect,
+                    res === "wrong" && s.wordWrapperWrong,
+                    res === "orange" && s.wordWrapperTapped,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      s.wordText,
+                      isActive && s.wordTextActive,
+                      res === "correct" && s.wordTextCorrect,
+                    ]}
+                  >
+                    {word}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
-      </Modal>
+      </ScrollView>
 
-      {/* ── Congratulations Screen ── */}
+      {/* Mic and Controls */}
+      <View style={s.controls}>
+        <TouchableOpacity
+          style={[s.navBtn, currentSentence === 0 && { opacity: 0.3 }]}
+          disabled={currentSentence === 0}
+          onPress={handlePrev}
+        >
+          <Ionicons name="chevron-back" size={scale(32)} color="#60B5FF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[s.micBtn, micActive && s.micBtnActive]}
+          onPress={handleMicPress}
+          disabled={isEvaluating}
+        >
+          {isEvaluating ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Ionicons
+              name={micActive ? "stop" : "mic"}
+              size={scale(40)}
+              color="#fff"
+            />
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[s.navBtn, !allWordsCorrect && { opacity: 0.3 }]}
+          disabled={!allWordsCorrect}
+          onPress={handleNext}
+        >
+          <Ionicons
+            name={isLastSentence ? "checkmark-done" : "chevron-forward"}
+            size={scale(32)}
+            color={allWordsCorrect ? "#4CAF50" : "#60B5FF"}
+          />
+        </TouchableOpacity>
+      </View>
+
+      <View style={s.manualControls}>
+        <TouchableOpacity style={s.manualBtn} onPress={handleMarkWrong}>
+          <Ionicons name="close-circle" size={scale(24)} color="#E53935" />
+          <Text style={s.manualText}>Mark Wrong</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.manualBtn} onPress={handleMarkCorrect}>
+          <Ionicons name="checkmark-circle" size={scale(24)} color="#4CAF50" />
+          <Text style={s.manualText}>Mark Correct</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Points Pop */}
+      {showPointsPop && (
+        <Animated.View
+          style={[
+            s.pointsPop,
+            {
+              opacity: pointsPopAnim,
+              transform: [
+                {
+                  scale: pointsPopAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.5, 1.2],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Image
+            source={require("../assets/icons/diamond.png")}
+            style={s.popDiamond}
+          />
+          <Text style={s.popText}>+{sessionPointsRef.current} pts!</Text>
+        </Animated.View>
+      )}
+
+      {/* ── Avatar: slides up only when feedback is active ── */}
+      <View style={s.avatarSlideContainer} pointerEvents="none">
+        <Animated.View
+          style={[
+            s.avatarSlideContent,
+            {
+              transform: [
+                {
+                  translateY: avatarSlideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [verticalScale(300), 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          {/* Speech Bubble */}
+          {feedback && (
+            <Animated.View
+              style={[
+                s.bubble,
+                {
+                  opacity: feedbackAnim,
+                  transform: [
+                    { scale: feedbackAnim },
+                    {
+                      translateY: feedbackAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [20, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <View
+                style={[
+                  s.bubbleContent,
+                  feedback.type === "correct" ? s.bubbleCorrect : s.bubbleWrong,
+                ]}
+              >
+                <Text style={s.speechText}>{feedback.message}</Text>
+              </View>
+              <View
+                style={[
+                  s.bubbleTail,
+                  feedback.type === "correct"
+                    ? s.bubbleTailCorrect
+                    : s.bubbleTailWrong,
+                ]}
+              />
+            </Animated.View>
+          )}
+
+          <Image
+            source={avatarSource}
+            style={s.floatingAvatar}
+            contentFit="contain"
+          />
+        </Animated.View>
+      </View>
+
+      {/* Congratulations Modal */}
       <Modal visible={showCongrats} transparent animationType="fade">
         <View style={s.congratsOverlay}>
           <Animated.View
@@ -902,587 +877,238 @@ export default function ReadBook({ route, navigation }) {
               { transform: [{ scale: congratsScaleAnim }] },
             ]}
           >
-            {/* Stars row */}
-            <View style={s.starsRow}>
-              {["★", "★", "★"].map((star, i) => (
-                <Text key={i} style={[s.star, { marginHorizontal: scale(4) }]}>
-                  {star}
-                </Text>
-              ))}
+            <Text style={s.congratsTitle}>Amazing Reading!</Text>
+            <Image
+              source={require("../assets/animations/jump_owl.gif")}
+              style={s.congratsGif}
+            />
+            <View style={s.congratsPointsRow}>
+              <Image
+                source={require("../assets/icons/diamond.png")}
+                style={s.congratsDiamond}
+              />
+              <Text style={s.congratsPointsText}>
+                You earned {sessionPointsRef.current} points!
+              </Text>
             </View>
-
-            <Text style={s.congratsTitle}>Congratulations!</Text>
-            <Text style={s.congratsSubtitle}>You finished reading</Text>
-            <Text style={s.congratsBookTitle}>"{book.title}"</Text>
-
-            {/* Stats summary */}
-            <View style={s.congratsStatsBox}>
-              <View style={s.congratsStatRow}>
-                <Ionicons
-                  name="book-outline"
-                  size={scale(20)}
-                  color="#60B5FF"
-                />
-                <Text style={s.congratsStatLabel}>Words Read</Text>
-                <Text style={s.congratsStatValue}>
-                  {book.contents.reduce(
-                    (acc, s) => acc + s.split(" ").length,
-                    0,
-                  )}
-                </Text>
-              </View>
-              <View style={s.congratsDivider} />
-              <View style={s.congratsStatRow}>
-                <Ionicons name="mic-outline" size={scale(20)} color="#FF9149" />
-                <Text style={s.congratsStatLabel}>Recordings Taken</Text>
-                <Text style={s.congratsStatValue}>
-                  {recordingsCountRef.current}
-                </Text>
-              </View>
-              <View style={s.congratsDivider} />
-              <View style={s.congratsStatRow}>
-                <Image
-                  source={require("../assets/icons/diamond.png")}
-                  style={s.congratsStatDiamond}
-                  contentFit="contain"
-                />
-                <Text style={s.congratsStatLabel}>Points Earned</Text>
-                <Text style={[s.congratsStatValue, { color: "#FFD700" }]}>
-                  +{sessionPointsRef.current}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={s.congratsMessage}>
-              Keep reading to earn even more! 🌟
-            </Text>
-
             <TouchableOpacity
-              style={s.congratsDoneButton}
-              activeOpacity={0.85}
-              onPress={() => {
-                setShowCongrats(false);
-                resumeMusic();
-                navigation.navigate("HomeScreen");
-              }}
+              style={s.congratsDoneBtn}
+              onPress={handleCongratsDone}
             >
-              <Text style={s.congratsDoneText}>Done!</Text>
+              <Text style={s.congratsDoneText}>Great!</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
       </Modal>
 
-      {/* ── Ellalert ── */}
       <Ellalert config={alertConfig} onClose={closeAlert} />
-
-      <TouchableOpacity style={s.backButton} onPress={handleBackPress}>
-        <Ionicons name="arrow-back" size={scale(26)} color="#fff" />
-      </TouchableOpacity>
-      <View style={s.header}>
-        <View style={s.headerText}>
-          <Text style={s.headerTitle}>ELLA</Text>
-          <Text style={s.headerSubTitle}>Your English Buddy</Text>
-        </View>
-
-        <View style={s.badgeWrapper}>
-          <View style={s.badgeContainer}>
-            <Image
-              source={require("../assets/icons/diamond.png")}
-              style={s.diamondIcon}
-              contentFit="contain"
-            />
-            <Text style={s.amountText}>{localPoints}</Text>
-          </View>
-          {showPointsPop && (
-            <Animated.Text
-              style={[
-                s.pointsPop,
-                {
-                  opacity: pointsPopAnim,
-                  transform: [
-                    {
-                      translateY: pointsPopAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, -scale(30)],
-                      }),
-                    },
-                    {
-                      scale: pointsPopAnim.interpolate({
-                        inputRange: [0, 0.5, 1],
-                        outputRange: [0.5, 1.4, 1.1],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            >
-              {`+${showPointsPop} ✦`}
-            </Animated.Text>
-          )}
-        </View>
-      </View>
-      <Text style={s.booktitle}>{book.title}</Text>
-      <Text style={s.writer}>By {book.writer}</Text>
-      <RNImage source={{ uri: book.cover }} style={s.coverImage} />
-      <View style={s.readerBox}>
-        <View style={s.wordsContainer}>
-          {sentenceWords.map((word, index) => {
-            const result = currentWordResults[index];
-            const isPointer = index === activeWordIndex;
-            return (
-              <TouchableOpacity
-                key={index}
-                onPress={() => handleWordPress(index)}
-                activeOpacity={0.75}
-              >
-                <Text
-                  style={[
-                    s.word,
-                    result === "correct" && s.wordCorrect,
-                    result === "wrong" && s.wordWrong,
-                    result === "orange" && s.wordOrange,
-                    isPointer && !result && s.wordPointer,
-                  ]}
-                >
-                  {word}{" "}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        <Text style={s.progress}>
-          {currentSentence + 1} / {book.contents.length}
-        </Text>
-      </View>
-      <View style={s.controlRow}>
-        <TouchableOpacity
-          style={[s.navButton, currentSentence === 0 && s.disabled]}
-          disabled={currentSentence === 0}
-          onPress={handlePrev}
-        >
-          <Ionicons name="arrow-back-circle" size={scale(48)} color="#555" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            s.micButton,
-            micActive && s.micButtonActive,
-            isEvaluating && s.micButtonDisabled,
-          ]}
-          onPress={handleMicPress}
-        >
-          {isEvaluating ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Ionicons
-              name={micActive ? "stop-circle-outline" : "mic-outline"}
-              size={scale(48)}
-              color="#fff"
-            />
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[s.navButton, !allWordsCorrect && s.disabled]}
-          disabled={!allWordsCorrect}
-          onPress={handleNext}
-        >
-          <Ionicons
-            name={isLastSentence ? "checkmark-circle" : "arrow-forward-circle"}
-            size={scale(48)}
-            color={allWordsCorrect ? "#FF9149" : "#ccc"}
-          />
-        </TouchableOpacity>
-      </View>
-      <Text style={[s.micText, micActive && { color: "#e05555" }]}>
-        {micActive ? "Listening..." : "Speak"}
-      </Text>
-      <Text style={s.hintText}>
-        {allWordsCorrect
-          ? "All words read! Tap → to continue"
-          : `Tap a word to hear it pronounced`}
-      </Text>
-
-      {/* ── Avatar: slides up only when feedback is active ── */}
-      <Animated.View
-        style={[
-          s.avatarSection,
-          {
-            transform: [{ translateY: avatarTranslateY }],
-          },
-        ]}
-        pointerEvents="none"
-      >
-        {feedback && (
-          <Animated.View
-            style={[
-              s.bubbleWrapper,
-              {
-                opacity: feedbackAnim,
-                transform: [
-                  {
-                    translateY: feedbackAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [12, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <View
-              style={[
-                s.speechBubble,
-                feedback.type === "correct" ? s.bubbleCorrect : s.bubbleWrong,
-              ]}
-            >
-              <Text style={s.speechText}>{feedback.message}</Text>
-            </View>
-            <View
-              style={[
-                s.bubbleTail,
-                feedback.type === "correct"
-                  ? s.bubbleTailCorrect
-                  : s.bubbleTailWrong,
-              ]}
-            />
-          </Animated.View>
-        )}
-
-        <Image
-          source={avatarSource}
-          style={s.avatarImage}
-          contentFit="contain"
-        />
-      </Animated.View>
     </View>
   );
 }
 
 const getStyles = (scale, verticalScale) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: "#fff",
-      alignItems: "center",
-      marginTop: verticalScale(30),
-    },
-    loadingText: {
-      fontFamily: "PixelifySans",
-      fontSize: scale(16),
-      color: "#888",
-    },
-    backButton: {
-      position: "absolute",
-      top: verticalScale(18),
-      left: scale(20),
-      zIndex: 50,
-    },
-    savingOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.45)",
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    savingBox: {
-      backgroundColor: "#fff",
-      borderRadius: scale(16),
-      paddingVertical: verticalScale(28),
-      paddingHorizontal: scale(36),
-      alignItems: "center",
-      gap: scale(14),
-      elevation: 8,
-      shadowColor: "#000",
-      shadowOpacity: 0.18,
-      shadowRadius: scale(12),
-      shadowOffset: { width: 0, height: 4 },
-    },
-    savingText: {
-      fontFamily: "PixelifySans",
-      fontSize: scale(15),
-      color: "#444",
-      marginTop: scale(8),
-    },
+    container: { flex: 1, backgroundColor: "#fff" },
+    loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+
     header: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
-      width: "100%",
-      marginBottom: verticalScale(6),
-      backgroundColor: "#60B5FF",
-      height: verticalScale(60),
+      paddingTop: verticalScale(50),
+      paddingHorizontal: scale(20),
+      paddingBottom: verticalScale(10),
+      gap: scale(15),
     },
-    headerText: {
-      flexDirection: "column",
+    backButton: { width: scale(40), height: scale(40), justifyContent: "center" },
+    progressTrack: {
       flex: 1,
-      alignItems: "center",
-      marginLeft: scale(70),
+      height: verticalScale(12),
+      backgroundColor: "#E0E0E0",
+      borderRadius: scale(6),
+      overflow: "hidden",
     },
-    headerTitle: {
-      fontFamily: "PixelifySans",
-      fontSize: scale(24),
-      color: "#fff",
-    },
-    headerSubTitle: {
-      fontFamily: "PixelifySans",
-      fontSize: scale(12),
-      color: "#fff",
-    },
-    badgeWrapper: {
-      position: "relative",
-      marginRight: scale(12),
-      alignItems: "center",
-    },
-    badgeContainer: {
+    progressBar: { height: "100%", backgroundColor: "#60B5FF" },
+    badge: {
       flexDirection: "row",
       alignItems: "center",
-      backgroundColor: "rgba(0,0,0,0.2)",
-      borderColor: "white",
-      borderWidth: 1,
-      borderRadius: scale(50),
-      paddingVertical: 2,
+      backgroundColor: "#F5F5F5",
       paddingHorizontal: scale(10),
+      paddingVertical: verticalScale(5),
+      borderRadius: scale(20),
     },
-    diamondIcon: { width: scale(14), height: scale(14), marginRight: scale(6) },
-    amountText: { color: "#fff", fontSize: scale(13), fontFamily: "Mochi" },
-    pointsPop: {
-      position: "absolute",
-      top: -scale(6),
-      right: -scale(4),
-      fontFamily: "PixelifySans",
-      fontSize: scale(15),
-      color: "#FFD700",
-      zIndex: 10,
+    diamond: { width: scale(20), height: scale(20), marginRight: scale(4) },
+    badgeText: {
+      fontFamily: "Poppins",
+      fontSize: scale(14),
+      fontWeight: "bold",
+      color: "#333",
     },
-    booktitle: {
-      fontSize: scale(20),
-      fontFamily: "Mochi",
-      color: "#000",
-      marginTop: verticalScale(15),
-      textAlign: "center",
+
+    content: {
+      flexGrow: 1,
+      justifyContent: "center",
       paddingHorizontal: scale(20),
     },
-    writer: {
-      fontSize: scale(11),
-      fontFamily: "Poppins",
-      fontStyle: "italic",
-      color: "#555",
-      marginBottom: verticalScale(6),
-    },
-    coverImage: {
-      width: "75%",
-      height: verticalScale(200),
-      borderRadius: scale(10),
-      borderWidth: 5,
-      borderColor: "#60B5FF",
-      marginBottom: verticalScale(30),
-      marginTop: verticalScale(30),
-    },
-    readerBox: {
-      backgroundColor: "#fff",
-      width: "90%",
-      minHeight: verticalScale(150),
-      borderRadius: scale(15),
-      padding: scale(15),
-      borderColor: "#FF9149",
-      borderWidth: 2,
-      alignItems: "center",
+    sentenceCard: {
+      backgroundColor: "#F9FBFF",
+      borderRadius: scale(20),
+      padding: scale(24),
+      minHeight: verticalScale(200),
       justifyContent: "center",
+      borderWidth: 1,
+      borderColor: "#EAF2FF",
     },
     wordsContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
       justifyContent: "center",
-      padding: scale(5),
+      gap: scale(10),
     },
-    word: {
-      fontSize: scale(20),
-      fontFamily: "Poppins",
-      color: "#111",
-      lineHeight: scale(34),
+    wordWrapper: {
+      paddingHorizontal: scale(8),
+      paddingVertical: verticalScale(4),
+      borderRadius: scale(8),
+      borderBottomWidth: 3,
+      borderBottomColor: "transparent",
     },
-    wordPointer: {
-      textDecorationLine: "underline",
-      fontFamily: "PoppinsBold",
-    },
-    wordCorrect: { fontFamily: "PoppinsBold", color: "#4CAF50" },
-    wordWrong: { fontFamily: "PoppinsBold", color: "#ff6f00" },
-    wordOrange: { fontFamily: "PoppinsBold", color: "#FF9149" },
-    progress: {
-      marginTop: verticalScale(8),
-      fontSize: scale(11),
-      fontFamily: "Poppins",
-      color: "#888",
-    },
-    controlRow: {
+    wordWrapperActive: { borderBottomColor: "#60B5FF" },
+    wordWrapperCorrect: { backgroundColor: "#E8F5E9", borderBottomColor: "#4CAF50" },
+    wordWrapperWrong: { backgroundColor: "#FFEBEE", borderBottomColor: "#E53935" },
+    wordWrapperTapped: { borderBottomColor: "#FF9149" },
+    wordText: { fontFamily: "Poppins", fontSize: scale(24), color: "#333" },
+    wordTextActive: { color: "#60B5FF", fontWeight: "bold" },
+    wordTextCorrect: { color: "#2E7D32" },
+
+    controls: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
-      gap: scale(10),
-      marginTop: verticalScale(10),
-      width: "90%",
+      justifyContent: "space-between",
+      paddingHorizontal: scale(40),
+      paddingBottom: verticalScale(30),
     },
-    navButton: { padding: scale(4), margin: 12 },
-    disabled: { opacity: 0.28 },
-    micButton: {
-      alignItems: "center",
-      justifyContent: "center",
+    micBtn: {
+      width: scale(80),
+      height: scale(80),
+      borderRadius: scale(40),
       backgroundColor: "#60B5FF",
-      borderRadius: scale(50),
-      width: scale(60),
-      height: scale(60),
-      margin: 10,
+      justifyContent: "center",
+      alignItems: "center",
+      elevation: 4,
     },
-    micButtonActive: { backgroundColor: "#e05555" },
-    micButtonDisabled: { backgroundColor: "#aaa" },
-    micText: {
-      color: "#aaa",
-      fontSize: scale(16),
-      fontFamily: "Poppins",
-      marginTop: scale(2),
+    micBtnActive: { backgroundColor: "#E53935" },
+    navBtn: { width: scale(60), height: scale(60), justifyContent: "center", alignItems: "center" },
+
+    manualControls: {
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: scale(30),
+      paddingBottom: verticalScale(40),
     },
-    hintText: {
-      fontFamily: "Poppins",
-      fontSize: scale(16),
-      color: "#aaa",
-      marginTop: verticalScale(4),
-      fontStyle: "italic",
-      textAlign: "center",
+    manualBtn: { alignItems: "center", gap: verticalScale(4) },
+    manualText: { fontFamily: "Poppins", fontSize: scale(10), color: "#888" },
+
+    pointsPop: {
+      position: "absolute",
+      top: "20%",
+      alignSelf: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "rgba(255,255,255,0.9)",
+      paddingHorizontal: scale(20),
+      paddingVertical: verticalScale(10),
+      borderRadius: scale(30),
+      elevation: 5,
+    },
+    popDiamond: { width: scale(24), height: scale(24), marginRight: scale(8) },
+    popText: {
+      fontFamily: "PoppinsBold",
+      fontSize: scale(20),
+      color: "#FFD700",
     },
 
-    // ── Avatar ──
-    avatarSection: {
+    avatarSlideContainer: {
       position: "absolute",
       bottom: 0,
-      left: scale(10),
-      alignItems: "flex-start",
+      left: 0,
+      right: 0,
+      alignItems: "center",
+      height: verticalScale(350),
+      justifyContent: "flex-end",
     },
-    bubbleWrapper: {
-      alignItems: "flex-start",
-      marginBottom: scale(2),
+    avatarSlideContent: { alignItems: "center" },
+    floatingAvatar: {
+      width: scale(150),
+      height: scale(150),
+      marginBottom: verticalScale(-20),
     },
-    speechBubble: {
-      borderRadius: scale(12),
-      paddingHorizontal: scale(12),
-      paddingVertical: verticalScale(7),
-      maxWidth: scale(150),
+
+    bubble: { alignItems: "center", marginBottom: verticalScale(10) },
+    bubbleContent: {
+      paddingHorizontal: scale(20),
+      paddingVertical: verticalScale(12),
+      borderRadius: scale(20),
+      maxWidth: scale(250),
     },
     bubbleCorrect: { backgroundColor: "#4CAF50" },
-    bubbleWrong: { backgroundColor: "#FED85D" },
+    bubbleWrong: { backgroundColor: "#E53935" },
     speechText: {
-      fontFamily: "PixelifySans",
-      fontSize: scale(13),
+      fontFamily: "PoppinsBold",
+      fontSize: scale(14),
       color: "#fff",
       textAlign: "center",
     },
     bubbleTail: {
       width: 0,
       height: 0,
-      borderLeftWidth: scale(8),
-      borderRightWidth: scale(8),
-      borderTopWidth: scale(9),
+      backgroundColor: "transparent",
+      borderStyle: "solid",
+      borderLeftWidth: scale(10),
+      borderRightWidth: scale(10),
+      borderTopWidth: verticalScale(10),
       borderLeftColor: "transparent",
       borderRightColor: "transparent",
-      marginLeft: scale(18),
+      marginTop: verticalScale(-1),
     },
     bubbleTailCorrect: { borderTopColor: "#4CAF50" },
-    bubbleTailWrong: { borderTopColor: "#FED85D" },
-    avatarImage: {
-      width: scale(65),
-      height: scale(65),
-    },
+    bubbleTailWrong: { borderTopColor: "#E53935" },
 
-    // ── Congratulations Modal ──
     congratsOverlay: {
       flex: 1,
-      backgroundColor: "rgba(0,0,0,0.55)",
+      backgroundColor: "rgba(0,0,0,0.7)",
       justifyContent: "center",
       alignItems: "center",
     },
     congratsCard: {
-      backgroundColor: "#fff",
-      borderRadius: scale(24),
-      paddingVertical: verticalScale(36),
-      paddingHorizontal: scale(32),
-      alignItems: "center",
       width: "85%",
-      elevation: 10,
-      shadowColor: "#000",
-      shadowOpacity: 0.2,
-      shadowRadius: scale(16),
-      shadowOffset: { width: 0, height: 6 },
-    },
-    starsRow: {
-      flexDirection: "row",
-      marginBottom: verticalScale(8),
-    },
-    star: {
-      fontSize: scale(36),
-      color: "#FFD700",
+      backgroundColor: "#fff",
+      borderRadius: scale(30),
+      padding: scale(30),
+      alignItems: "center",
     },
     congratsTitle: {
-      fontFamily: "PixelifySans",
+      fontFamily: "Mochi",
       fontSize: scale(28),
       color: "#FF9149",
-      marginBottom: verticalScale(4),
-    },
-    congratsSubtitle: {
-      fontFamily: "Poppins",
-      fontSize: scale(14),
-      color: "#888",
-    },
-    congratsBookTitle: {
-      fontFamily: "Mochi",
-      fontSize: scale(18),
-      color: "#333",
-      textAlign: "center",
       marginBottom: verticalScale(20),
-      marginTop: verticalScale(2),
     },
-    congratsStatsBox: {
-      backgroundColor: "#F8F9FA",
-      borderRadius: scale(16),
-      paddingVertical: verticalScale(6),
-      paddingHorizontal: scale(16),
-      width: "100%",
-      marginBottom: verticalScale(18),
+    congratsGif: {
+      width: scale(150),
+      height: scale(150),
+      marginBottom: verticalScale(20),
     },
-    congratsStatRow: {
+    congratsPointsRow: {
       flexDirection: "row",
       alignItems: "center",
-      paddingVertical: verticalScale(10),
-      gap: scale(10),
+      marginBottom: verticalScale(30),
     },
-    congratsStatLabel: {
-      fontFamily: "Poppins",
-      fontSize: scale(13),
-      color: "#555",
-      flex: 1,
-    },
-    congratsStatValue: {
-      fontFamily: "PixelifySans",
+    congratsDiamond: { width: scale(30), height: scale(30), marginRight: scale(10) },
+    congratsPointsText: {
+      fontFamily: "PoppinsBold",
       fontSize: scale(18),
       color: "#333",
     },
-    congratsStatDiamond: {
-      width: scale(20),
-      height: scale(20),
-    },
-    congratsDivider: {
-      height: 1,
-      backgroundColor: "#E9ECEF",
-      width: "100%",
-    },
-    congratsMessage: {
-      fontFamily: "Poppins",
-      fontSize: scale(13),
-      color: "#aaa",
-      fontStyle: "italic",
-      textAlign: "center",
-      marginBottom: verticalScale(22),
-    },
-    congratsDoneButton: {
-      backgroundColor: "#FF9149",
+    congratsDoneBtn: {
+      backgroundColor: "#60B5FF",
       borderRadius: scale(50),
       paddingVertical: verticalScale(12),
       paddingHorizontal: scale(48),

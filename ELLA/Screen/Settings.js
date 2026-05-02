@@ -12,6 +12,7 @@ import { Audio } from "expo-av";
 // ---------------------------------------------------------------------------
 // Settings Screen
 // ---------------------------------------------------------------------------
+
 const VOICES = [
   { name: "en-US-Neural2-F", label: "Aria", gender: "Female", icon: "👩" },
   { name: "en-US-Neural2-C", label: "Clara", gender: "Female", icon: "👧" },
@@ -24,7 +25,6 @@ export default function Settings() {
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
 
-  // Pull everything from context — no local duplicates for audio values
   const { setVolume, soundVolume, setSoundVolume, ttsVoice, setTtsVoice } =
     useMusic();
 
@@ -54,7 +54,6 @@ export default function Settings() {
     }
   };
 
-  // Music slider — debounced so dragging doesn't spam setVolumeAsync
   const handleMusicChange = useCallback(
     (val) => {
       setMusicVolume(val);
@@ -64,7 +63,6 @@ export default function Settings() {
     [setVolume],
   );
 
-  // Sound FX slider — updates context value (ReadBook reads it on next tap)
   const handleSoundChange = useCallback(
     (val) => {
       if (soundDebounce.current) clearTimeout(soundDebounce.current);

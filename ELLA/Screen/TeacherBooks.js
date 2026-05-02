@@ -11,16 +11,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  getFirestore,
-  doc,
-  getDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
-import { auth } from "../firebase";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import api from "../utils/api";
 import { useScale } from "../utils/scaling";
 
 export default function TeacherBooks() {
@@ -45,31 +38,26 @@ export default function TeacherBooks() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const db = getFirestore();
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
-
-      // ── 1. Get the student's user doc to find their classEnrolled ──────────
-      const userSnap = await getDoc(doc(db, "users", uid));
-      if (!userSnap.exists()) return;
-      const userData = userSnap.data();
-      const user = { id: uid, ...userData };
+      
+      // 1. Get User Profile
+      const userResp = await api.auth.getUser();
+      if (!userResp.success) return;
+      const user = userResp.user;
       setCurrUser(user);
 
-      const classId = userData.classEnrolled ?? null;
+      const classId = user.classEnrolled ?? null;
       if (!classId) {
-        // Student is not enrolled in any class — nothing to show
         setLoading(false);
         return;
       }
 
-      // ── 2. Fetch the class doc to get teacher info ────────────────────────
-      const classSnap = await getDoc(doc(db, "classes", classId));
-      if (!classSnap.exists()) {
+      // 2. Fetch the class doc to get teacher info
+      const classResp = await api.class.getDetails(classId);
+      if (!classResp.success) {
         setLoading(false);
         return;
       }
-      const classInfo = { id: classSnap.id, ...classSnap.data() };
+      const classInfo = classResp.class;
       setClassData(classInfo);
 
       const teacherId = classInfo.teacherID ?? classInfo.teacherId ?? null;
@@ -79,28 +67,19 @@ export default function TeacherBooks() {
         return;
       }
 
-      // ── 3. Fetch books that belong to this teacher ────────────────────────
-      // Match on source === "Teacher" AND (teacherId OR uploadedById) === teacherId
-      const booksSnap = await getDocs(collection(db, "books"));
-      const allBooks = booksSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      // Only show books where:
-      // 1. source is "Teacher"
-      // 2. uploadedById exists AND matches the teacherId from the student's enrolled class
-      const filtered = allBooks.filter(
-        (b) =>
-          (b.source === "Teacher" || b.source === "teacher") &&
-          !!b.uploadedById &&
-          b.uploadedById === teacherId,
-      );
-
-      setTeacherBooks(filtered);
+      // 3. Fetch books that belong to this teacher
+      const booksResp = await api.books.getCatalog({ source: 'Teacher' });
+      if (booksResp.success) {
+         const filtered = booksResp.books.filter(b => b.uploadedBy === teacherId);
+         setTeacherBooks(filtered);
+      }
     } catch (err) {
       console.log("TeacherBooks fetch error:", err);
     } finally {
       setLoading(false);
     }
   };
+
 
   const handleOpenBook = (book) => {
     if (!currUser) return;

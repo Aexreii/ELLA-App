@@ -12,20 +12,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import useAppFonts from "../hook/useAppFonts";
 import { useScale } from "../utils/scaling";
-import { auth } from "../firebase";
-import {
-  signInWithEmailAndPassword,
-  signInWithCredential,
-  GoogleAuthProvider,
-  sendPasswordResetEmail,
-} from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+
 import {
   GoogleSignin,
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+
 import EllAlert, { useEllAlert } from "../components/Alerts";
+import api from "../utils/api";
 
 export default function StartUp({ navigation }) {
   const { scale, verticalScale } = useScale();
@@ -42,8 +37,10 @@ export default function StartUp({ navigation }) {
   const fontsLoaded = useAppFonts();
   if (!fontsLoaded) return null;
 
-  // ── Forgot password ────────────────────────────────────────
+  //lipat sa backend
   const handleForgotPass = async () => {
+    // Password reset usually requires a backend email service
+    // For now, we point them to the general process
     if (!email) {
       showAlert({
         type: "warning",
@@ -53,41 +50,14 @@ export default function StartUp({ navigation }) {
       });
       return;
     }
-    try {
-      setIsSubmitting(true);
-      await sendPasswordResetEmail(auth, email.trim());
-      showAlert({
-        type: "success",
-        title: "Check your inbox!",
-        message: "We've sent password reset instructions to your email.",
-      });
-    } catch (error) {
-      if (error.code === "auth/user-not-found") {
-        showAlert({
-          type: "error",
-          title: "Account not found",
-          message: "We couldn't find an account with that email address.",
-        });
-      } else if (error.code === "auth/invalid-email") {
-        showAlert({
-          type: "error",
-          title: "Invalid email",
-          message:
-            "That doesn't look like a valid email address. Please check and try again.",
-        });
-      } else {
-        showAlert({
-          type: "error",
-          title: "Something went wrong",
-          message: error.message,
-        });
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+    
+    showAlert({
+      type: "info",
+      title: "Password Reset",
+      message: "Please contact support or use the web portal to reset your password.",
+    });
   };
-
-  // ── Email sign-in ──────────────────────────────────────────
+  //lipat sa backend
   const handleEmailSignIn = async () => {
     if (!showEmailForm) {
       setShowName(false);
@@ -105,89 +75,54 @@ export default function StartUp({ navigation }) {
     try {
       setEmailLoading(true);
       setIsSubmitting(true);
-      const { user } = await signInWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password,
-      );
-      const db = getFirestore();
-      const userRef = doc(db, "users", user.uid);
-      const snap = await getDoc(userRef);
-      if (!snap.exists()) {
-        await setDoc(userRef, {
-          name: null,
-          age: null,
-          role: null,
-          points: 0,
-          character: null,
-          email: user.email,
-          progress: [],
-          ownedStickers: [],
-          createdAt: new Date(),
-          provider: "email",
-          id: user.uid,
-        });
-      }
-      const userData = (await getDoc(userRef)).data();
+      
+      // Use backend API instead of direct Firebase
+      const response = await api.auth.login(email.trim(), password);
+      const userData = response.user;
+
       if (!userData.role) navigation.replace("RoleSelect");
       else if (!userData.name || !userData.age) navigation.replace("NameEntry");
       else if (!userData.character) navigation.replace("AvatarSelect");
       else navigation.replace("HomeScreen");
     } catch (error) {
-      switch (error.code) {
-        case "auth/user-not-found":
-          showAlert({
-            type: "error",
-            title: "Account not found",
-            message:
-              "We couldn't find an account with that email. Did you sign up yet?",
-          });
-          break;
-        case "auth/wrong-password":
-          showAlert({
-            type: "error",
-            title: "Wrong password",
-            message:
-              "That password doesn't match. Try again or use Forgot Password.",
-          });
-          break;
-        case "auth/invalid-email":
-          showAlert({
-            type: "error",
-            title: "Invalid email",
-            message: "That doesn't look like a valid email address.",
-          });
-          break;
-        case "auth/too-many-requests":
-          showAlert({
-            type: "warning",
-            title: "Too many attempts",
-            message:
-              "Your account is temporarily locked. Reset your password or try again later.",
-          });
-          break;
-        case "auth/invalid-credential":
-          showAlert({
-            type: "error",
-            title: "Incorrect details",
-            message:
-              "Your email or password is incorrect. Please check and try again.",
-          });
-          break;
-        default:
-          showAlert({
-            type: "error",
-            title: "Sign in failed",
-            message: error.message,
-          });
+      const errorMessage = error.message || "";
+      if (errorMessage.includes("EMAIL_NOT_FOUND")) {
+        showAlert({
+          type: "error",
+          title: "Account not found",
+          message: "We couldn't find an account with that email. Did you sign up yet?",
+        });
+      } else if (errorMessage.includes("INVALID_PASSWORD") || errorMessage.includes("INVALID_LOGIN_CREDENTIALS")) {
+        showAlert({
+          type: "error",
+          title: "Wrong password",
+          message: "That password doesn't match. Try again or use Forgot Password.",
+        });
+      } else if (errorMessage.includes("INVALID_EMAIL")) {
+        showAlert({
+          type: "error",
+          title: "Invalid email",
+          message: "That doesn't look like a valid email address.",
+        });
+      } else if (errorMessage.includes("TOO_MANY_ATTEMPTS_TRY_LATER")) {
+        showAlert({
+          type: "warning",
+          title: "Too many attempts",
+          message: "Your account is temporarily locked. Reset your password or try again later.",
+        });
+      } else {
+        showAlert({
+          type: "error",
+          title: "Sign in failed",
+          message: error.message || "Something went wrong. Please try again.",
+        });
       }
     } finally {
       setEmailLoading(false);
       setIsSubmitting(false);
     }
   };
-
-  // ── Google sign-in ─────────────────────────────────────────
+  //lipat sa backend
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
@@ -199,36 +134,21 @@ export default function StartUp({ navigation }) {
       const { idToken } = await GoogleSignin.getTokens();
       if (!idToken) throw new Error("No ID token returned from Google");
 
-      const credential = GoogleAuthProvider.credential(idToken);
-      const { user } = await signInWithCredential(auth, credential);
+      // Use backend API instead of direct Firestore
+      const response = await api.auth.verifyToken(idToken);
+      const userData = response.user;
 
-      const db = getFirestore();
-      const userRef = doc(db, "users", user.uid);
-      const snap = await getDoc(userRef);
-      if (!snap.exists()) {
-        await setDoc(userRef, {
-          name: null,
-          age: null,
-          role: null,
-          points: 0,
-          character: null,
-          email: user.email,
-          classEnrolled: null,
-          createdAt: new Date(),
-          provider: "google",
-        });
-      }
-      const userData = (await getDoc(userRef)).data();
       if (!userData.role) navigation.replace("RoleSelect");
       else if (!userData.name || !userData.age) navigation.replace("NameEntry");
       else if (!userData.character) navigation.replace("AvatarSelect");
       else navigation.replace("HomeScreen");
     } catch (error) {
       console.log("Google Sign-in error:", error);
+      // ... (error handling)
       if (isErrorWithCode(error)) {
         switch (error.code) {
           case statusCodes.SIGN_IN_CANCELLED:
-            break; // user dismissed — no alert needed
+            break;
           case statusCodes.IN_PROGRESS:
             showAlert({
               type: "info",

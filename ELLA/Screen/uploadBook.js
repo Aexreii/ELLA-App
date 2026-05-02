@@ -14,36 +14,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  getDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-  updateDoc,
-  arrayUnion,
-} from "firebase/firestore";
-import { auth } from "../firebase";
+import api from "../utils/api";
 import { useRoute } from "@react-navigation/native";
 import { useScale } from "../utils/scaling";
 import EllAlert, { useEllAlert } from "../components/Alerts";
 
 const CLOUDINARY_CLOUD_NAME = "dygbbqapd";
 const CLOUDINARY_UPLOAD_PRESET = "ella_books";
-
-const generateBookId = async (db) => {
-  let bookId;
-  let exists = true;
-  while (exists) {
-    bookId = Math.floor(10000 + Math.random() * 90000);
-    const snap = await getDoc(doc(db, "books", `bookId${bookId}`));
-    exists = snap.exists();
-  }
-  return bookId;
-};
 
 const splitSentences = (text) => {
   return text
@@ -187,36 +164,20 @@ export default function UploadBook() {
 
     try {
       setUploading(true);
-      const db = getFirestore();
-      const uid = auth.currentUser?.uid;
-      if (!uid) throw new Error("Not logged in");
-
+      
       const coverUrl = await uploadToCloudinary(coverUri);
-      const bookId = await generateBookId(db);
-      const docId = `bookId${bookId}`;
       const bookSource = isTeacher ? "Teacher" : "user";
 
-      await setDoc(doc(db, "books", docId), {
-        bookId,
+      // Use backend API instead of direct Firestore
+      await api.books.upload({
         title: title.trim(),
         writer: writer.trim(),
         publisher: publisher.trim(),
         difficulty,
         contents: sentences,
-        sentenceCount: sentences.length,
         cover: coverUrl,
         source: bookSource,
-        uploadedById: uid,
       });
-
-      const classesRef = collection(db, "classes");
-      const classQuery = query(classesRef, where("teacherID", "==", uid));
-      const classSnap = await getDocs(classQuery);
-      if (!classSnap.empty) {
-        await updateDoc(doc(db, "classes", classSnap.docs[0].id), {
-          bookId: arrayUnion(bookId),
-        });
-      }
 
       showAlert({
         type: "success",
@@ -231,12 +192,13 @@ export default function UploadBook() {
       showAlert({
         type: "error",
         title: "Upload failed",
-        message: "Something went wrong. Please try again.",
+        message: err.message || "Something went wrong. Please try again.",
       });
     } finally {
       setUploading(false);
     }
   };
+
 
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>

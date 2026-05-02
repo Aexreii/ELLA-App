@@ -13,13 +13,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useScale } from "../utils/scaling";
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { auth } from "../firebase";
+import api from "../utils/api";
+import { useScale } from "../utils/scaling";
 import EllAlert, { useEllAlert } from "../components/Alerts";
 
 const GFORM_URL =
@@ -49,14 +44,12 @@ export default function ContactUs() {
 
     setSending(true);
     try {
-      const db = getFirestore();
-      await addDoc(collection(db, "reports"), {
+      // Use backend API instead of direct Firestore
+      await api.user.report({
         name: name.trim(),
         email: email.trim(),
         subject: subject.trim(),
         comment: comment.trim(),
-        userId: auth.currentUser?.uid ?? null,
-        createdAt: serverTimestamp(),
       });
 
       showAlert({
@@ -86,6 +79,7 @@ export default function ContactUs() {
       setSending(false);
     }
   };
+
 
   const s = getStyles(scale, verticalScale);
 

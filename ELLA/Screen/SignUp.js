@@ -10,20 +10,16 @@ import {
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import { auth } from "../firebase";
-import {
-  signInWithCredential,
-  GoogleAuthProvider,
-  createUserWithEmailAndPassword,
-} from "firebase/auth";
-import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-import { useScale } from "../utils/scaling";
+
 import {
   GoogleSignin,
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+
+import { useScale } from "../utils/scaling";
 import EllAlert, { useEllAlert } from "../components/Alerts";
+import api from "../utils/api";
 
 export default function SignUp() {
   const navigation = useNavigation();
@@ -36,6 +32,7 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  //backend
   const handleEmailSignUp = async () => {
     if (!email || !password) {
       showAlert({
@@ -55,26 +52,10 @@ export default function SignUp() {
     }
     try {
       setLoading(true);
-      const { user } = await createUserWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password,
-      );
-      const db = getFirestore();
-      await setDoc(doc(db, "users", user.uid), {
-        name: null,
-        age: null,
-        role: null,
-        points: 0,
-        character: null,
-        email: user.email,
-        progress: [],
-        ownedStickers: [],
-        createdAt: new Date(),
-        id: user.uid,
-        provider: "email",
-        classEnrolled: null,
-      });
+      
+      // Use backend API instead of direct Firebase
+      await api.auth.register(email.trim(), password, null, null);
+
       showAlert({
         type: "success",
         title: "Success",
@@ -82,30 +63,38 @@ export default function SignUp() {
       });
       navigation.replace("RoleSelect");
     } catch (error) {
-      if (error.code === "auth/email-already-in-use")
+      const errorMessage = error.message || "";
+      if (errorMessage.includes("EMAIL_EXISTS")) {
         showAlert({
           type: "error",
           title: "Error",
           message: "Email is already in use",
         });
-      else if (error.code === "auth/invalid-email")
+      } else if (errorMessage.includes("INVALID_EMAIL")) {
         showAlert({
           type: "error",
           title: "Error",
           message: "Invalid email address",
         });
-      else if (error.code === "auth/weak-password")
+      } else if (errorMessage.includes("WEAK_PASSWORD")) {
         showAlert({
           type: "error",
           title: "Error",
           message: "Password is too weak",
         });
-      else showAlert({ type: "error", title: "Error", message: error.message });
+      } else {
+        showAlert({ 
+          type: "error", 
+          title: "Error", 
+          message: error.message || "Registration failed. Please try again." 
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  //lipat sa backend
   const handleGoogleSignIn = async () => {
     try {
       setIsSubmitting(true);
@@ -117,34 +106,16 @@ export default function SignUp() {
       const { idToken } = await GoogleSignin.getTokens();
       if (!idToken) throw new Error("No ID token returned from Google");
 
-      const credential = GoogleAuthProvider.credential(idToken);
-      const { user } = await signInWithCredential(auth, credential);
+      // Use backend API instead of direct Firestore
+      const response = await api.auth.verifyToken(idToken);
+      const userData = response.user;
 
-      const db = getFirestore();
-      const userRef = doc(db, "users", user.uid);
-      const snap = await getDoc(userRef);
-      if (!snap.exists()) {
-        await setDoc(userRef, {
-          name: null,
-          age: null,
-          role: null,
-          points: 0,
-          character: null,
-          email: user.email,
-          progress: [],
-          ownedStickers: [],
-          createdAt: new Date(),
-          provider: "google",
-          id: user.uid,
-          classEnrolled: null,
-        });
-      }
-      const userData = (await getDoc(userRef)).data();
       if (!userData.role) navigation.replace("RoleSelect");
       else if (!userData.name || !userData.age) navigation.replace("NameEntry");
       else navigation.replace("HomeScreen");
     } catch (error) {
       console.log("Google Sign-up error:", error);
+      // ... (error handling)
       if (isErrorWithCode(error)) {
         switch (error.code) {
           case statusCodes.SIGN_IN_CANCELLED:

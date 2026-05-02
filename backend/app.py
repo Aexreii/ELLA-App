@@ -17,6 +17,7 @@ from routes.speech_routes import speech_bp
 from routes.books_routes import books_bp
 from routes.reading_routes import reading_bp
 from routes.prizes_routes import prizes_bp
+from routes.class_routes import class_bp
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -42,6 +43,7 @@ app.register_blueprint(speech_bp, url_prefix='/api/speech')
 app.register_blueprint(books_bp, url_prefix='/api/books')
 app.register_blueprint(reading_bp, url_prefix='/api/reading')
 app.register_blueprint(prizes_bp, url_prefix='/api/prizes')
+app.register_blueprint(class_bp, url_prefix='/api/class')
 
 # Root endpoint
 @app.route('/')

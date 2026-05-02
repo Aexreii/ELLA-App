@@ -15,15 +15,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import Sidebar from "../components/Sidebar";
 import AppHeader from "../components/AppHeader";
 import useAppFonts from "../hook/useAppFonts";
-import { auth } from "../firebase";
-import {
-  getFirestore,
-  doc,
-  updateDoc,
-  collection,
-  getDocs,
-  setDoc,
-} from "firebase/firestore";
+import api from "../utils/api";
 import { useScale } from "../utils/scaling";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import EllAlert, { useEllAlert } from "../components/Alerts";
@@ -63,11 +55,11 @@ export default function Prizes() {
   useEffect(() => {
     const fetchStickers = async () => {
       try {
-        const db = getFirestore();
-        const snap = await getDocs(collection(db, "stickers"));
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        data.sort((a, b) => (a.cost ?? 0) - (b.cost ?? 0));
-        setStickers(data);
+        // Use backend API instead of direct Firestore
+        const response = await api.prizes.getStickers();
+        if (response.success) {
+          setStickers(response.stickers);
+        }
       } catch (e) {
         console.log("Fetch stickers error:", e);
         showAlert({
@@ -104,62 +96,37 @@ export default function Prizes() {
   const handleBuy = async () => {
     if (!selectedSticker) return;
 
-    const currentPoints = currUser?.points ?? 0;
-    const stickerCost = selectedSticker.cost ?? 0;
-
-    if (currentPoints < stickerCost) {
-      showAlert({
-        type: "warning",
-        title: "Not Enough Points",
-        message: `You need ${stickerCost} points. You have ${currentPoints}.`,
-      });
-      return;
-    }
-    if (ownedStickers.includes(selectedSticker.id)) {
-      showAlert({
-        type: "info",
-        title: "Already Owned",
-        message: "You already own this sticker!",
-      });
-      return;
-    }
-
     try {
       setPurchasing(true);
-      const user = auth.currentUser;
-      if (!user) {
+      
+      // Use backend API instead of direct Firestore
+      const response = await api.prizes.buySticker(selectedSticker.id);
+      
+      if (response.success) {
+        const newPoints = response.newPoints;
+        const newOwnedStickers = [...ownedStickers, selectedSticker.id];
+
+        setCurrUser((prev) => ({ ...prev, points: newPoints }));
+        setOwnedStickers(newOwnedStickers);
+        setModalVisible(false);
         showAlert({
-          type: "error",
-          title: "Error",
-          message: "You must be logged in.",
+          type: "success",
+          title: "Purchased!",
+          message: `You got the ${selectedSticker.name}! 🎉`,
         });
-        return;
       }
-
-      const db = getFirestore();
-      const newPoints = currentPoints - stickerCost;
-      const newOwnedStickers = [...ownedStickers, selectedSticker.id];
-
-      await updateDoc(doc(db, "users", user.uid), {
-        points: newPoints,
-        ownedStickers: newOwnedStickers,
-      });
-
-      setCurrUser((prev) => ({ ...prev, points: newPoints }));
-      setOwnedStickers(newOwnedStickers);
-      setModalVisible(false);
-      showAlert({
-        type: "success",
-        title: "Purchased!",
-        message: `You got the ${selectedSticker.name}! 🎉`,
-      });
     } catch (error) {
       console.log("Error buying sticker:", error);
-      showAlert({ type: "error", title: "Error", message: error.message });
+      showAlert({ 
+        type: "error", 
+        title: "Error", 
+        message: error.message || "Failed to purchase sticker. Please try again." 
+      });
     } finally {
       setPurchasing(false);
     }
   };
+
 
   const s = getStyles(scale, verticalScale);
 

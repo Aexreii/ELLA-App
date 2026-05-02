@@ -13,7 +13,7 @@ import { Image as RNImage } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useScale } from "../utils/scaling";
-import { getFirestore, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import api from "../utils/api";
 import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function OpenBook({ route, navigation }) {
@@ -68,12 +68,11 @@ export default function OpenBook({ route, navigation }) {
     }
     setIsSaving(true);
     try {
-      const db = getFirestore();
-      const bookRef = doc(db, "books", book.id);
       const contentsArray = editFields.contents
         .split("\n")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
+      
       const updates = {
         title: editFields.title.trim(),
         writer: editFields.writer.trim(),
@@ -82,7 +81,10 @@ export default function OpenBook({ route, navigation }) {
         cover: editFields.cover.trim(),
         contents: contentsArray,
       };
-      await updateDoc(bookRef, updates);
+
+      // Use backend API instead of direct Firestore
+      await api.books.update(book.id, updates);
+      
       setBook((prev) => ({ ...prev, ...updates }));
       setEditVisible(false);
       showAlert({
@@ -115,8 +117,9 @@ export default function OpenBook({ route, navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
-              const db = getFirestore();
-              await deleteDoc(doc(db, "books", book.id));
+              // Use backend API instead of direct Firestore
+              await api.books.delete(book.id);
+              
               showAlert({
                 type: "success",
                 title: "Deleted",
@@ -201,7 +204,7 @@ export default function OpenBook({ route, navigation }) {
       </View>
 
       <View style={s.buttonRow}>
-        {book.uploadedById === currUser?.uid && (
+        {(book.uploadedBy === currUser?.uid || book.uploadedById === currUser?.uid) && (
           <>
             <TouchableOpacity style={s.editButton} onPress={handleOpenEdit}>
               <Ionicons name="pencil" size={scale(18)} color="#fff" />
@@ -214,6 +217,7 @@ export default function OpenBook({ route, navigation }) {
           </>
         )}
       </View>
+
 
       {/* ── Edit Modal ── */}
       <Modal

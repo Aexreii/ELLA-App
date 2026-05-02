@@ -11,16 +11,7 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  getFirestore,
-  doc,
-  getDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
-import { auth } from "../firebase";
+import api from "../utils/api";
 import { useScale } from "../utils/scaling";
 
 const characterImages = {
@@ -46,33 +37,13 @@ export default function ManageClass() {
   const fetchClassData = async () => {
     try {
       setLoading(true);
-      const db = getFirestore();
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
-
-      const classesSnap = await getDocs(
-        query(collection(db, "classes"), where("teacherID", "==", uid)),
-      );
-
-      if (classesSnap.empty) {
-        setLoading(false);
-        return;
-      }
-
-      const classDoc = classesSnap.docs[0];
-      const data = classDoc.data();
-      setClassData({ id: classDoc.id, ...data });
-
-      if (data.students && data.students.length > 0) {
-        const profiles = await Promise.all(
-          data.students.map(async (studentId) => {
-            const snap = await getDoc(doc(db, "users", studentId));
-            return snap.exists() ? { id: studentId, ...snap.data() } : null;
-          }),
-        );
-        setStudents(profiles.filter(Boolean));
-      } else {
-        setStudents([]);
+      
+      // Use backend API instead of direct Firestore
+      const response = await api.class.getTeacherClassStudents();
+      
+      if (response.success) {
+        setClassData(response.class);
+        setStudents(response.students || []);
       }
     } catch (err) {
       console.log("ManageClass fetch error:", err);
@@ -80,6 +51,7 @@ export default function ManageClass() {
       setLoading(false);
     }
   };
+
 
   const s = getStyles(scale, verticalScale);
 

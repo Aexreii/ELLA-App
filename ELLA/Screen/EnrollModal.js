@@ -10,17 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useScale } from "../utils/scaling";
-import { auth } from "../firebase";
-import {
-  getFirestore,
-  collection,
-  query,
-  where,
-  getDocs,
-  updateDoc,
-  doc,
-  arrayUnion,
-} from "firebase/firestore";
+import api from "../utils/api";
 import EllAlert, { useEllAlert } from "../components/Alerts";
 
 export default function EnrollModal({ visible, onClose }) {
@@ -52,62 +42,33 @@ export default function EnrollModal({ visible, onClose }) {
 
     try {
       setLoading(true);
-      const user = auth.currentUser;
-      if (!user) {
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "You must be logged in to enroll.",
-        });
-        setLoading(false);
-        return;
-      }
-
-      const db = getFirestore();
-      const classesRef = collection(db, "classes");
-      const q = query(classesRef, where("code", "==", trimmed));
-      const snapshot = await getDocs(q);
-
-      if (snapshot.empty) {
-        showAlert({
-          type: "error",
-          title: "Not Found",
-          message:
-            "No class found with that code. Please check with your teacher.",
-        });
-        setLoading(false);
-        return;
-      }
-
-      const classDoc = snapshot.docs[0];
-      const classData = classDoc.data();
-
-      const alreadyEnrolled = classData.students?.includes(user.uid);
-      if (alreadyEnrolled) {
-        showAlert({
-          type: "info",
-          title: "Already Enrolled",
-          message: "You are already enrolled in this class.",
-        });
-        setLoading(false);
-        return;
-      }
-
-      await updateDoc(doc(db, "classes", classDoc.id), {
-        students: arrayUnion(user.uid),
-      });
-      const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, { classEnrolled: classDoc.id });
-
-      setEnrolledClassName(classData.name || "your class");
+      
+      // Use backend API instead of direct Firestore
+      const response = await api.class.enroll(trimmed);
+      
+      setEnrolledClassName(response.class?.teacherName || "your class");
       setSuccess(true);
     } catch (error) {
       console.log("Enroll error:", error);
-      showAlert({ type: "error", title: "Error", message: error.message });
+      const errorMessage = error.message || "";
+      if (errorMessage.includes("Invalid class code")) {
+        showAlert({
+          type: "error",
+          title: "Not Found",
+          message: "No class found with that code. Please check with your teacher.",
+        });
+      } else {
+        showAlert({ 
+          type: "error", 
+          title: "Error", 
+          message: error.message || "Enrollment failed. Please try again." 
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
+
 
   const s = getStyles(scale, verticalScale);
 

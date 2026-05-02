@@ -3,16 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { auth } from "../firebase";
-import {
-  getFirestore,
-  doc,
-  updateDoc,
-  collection,
-  getDoc,
-  writeBatch,
-  serverTimestamp,
-} from "firebase/firestore";
+import api from "../utils/api";
 import useAppFonts from "../hook/useAppFonts";
 import { useScale } from "../utils/scaling";
 import EllAlert, { useEllAlert } from "../components/Alerts";
@@ -27,61 +18,24 @@ export default function RoleSelect() {
 
   if (!fontsLoaded) return null;
 
-  const generateClassCode = () => {
-    const chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789qwertyuiopasdfghjklzxcvm";
-    let result = "";
-    for (let i = 0; i < 8; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  };
-
-  const getUniqueClassCode = async (db) => {
-    const newCode = generateClassCode();
-    const classRef = doc(db, "classes", newCode);
-    const docSnap = await getDoc(classRef);
-    if (docSnap.exists()) return await getUniqueClassCode(db);
-    return newCode;
-  };
-
   const handleRole = async (selectedRole) => {
     setRole(selectedRole);
     try {
-      const user = auth.currentUser;
-      const db = getFirestore();
-      const batch = writeBatch(db);
-      const userRef = doc(db, "users", user.uid);
-
       if (selectedRole === "Teacher") {
-        const classCode = await getUniqueClassCode(db);
-        const newClassRef = doc(db, "classes", classCode);
-        batch.set(newClassRef, {
-          className: `${user.name}'s Class`,
-          code: classCode,
-          teacherID: user.uid,
-          teacherName: user.name || "Teacher",
-          createdAt: serverTimestamp(),
-          students: [],
-          bookId: [],
-        });
-        batch.update(userRef, {
-          role: selectedRole,
-          ownedClassId: classCode,
-          classCode: classCode,
-        });
+        // Use backend API to create class (also sets role to Teacher)
+        await api.class.create({});
       } else {
-        batch.update(userRef, { role: selectedRole });
+        // Use backend API to update profile role
+        await api.user.updateProfile({ role: selectedRole });
       }
 
-      await batch.commit();
       navigation.navigate("NameEntry", { userRole: selectedRole });
     } catch (error) {
-      console.log("Firebase Path Error:", error);
+      console.log("Role selection error:", error);
       showAlert({
         type: "error",
         title: "Error",
-        message: "Failed to create class path. Please try again.",
+        message: error.message || "Failed to update role. Please try again.",
       });
     }
   };

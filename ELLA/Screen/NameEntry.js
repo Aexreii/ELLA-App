@@ -12,14 +12,7 @@ import { useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
-import { auth } from "../firebase";
-import {
-  getFirestore,
-  doc,
-  updateDoc,
-  getDoc,
-  writeBatch,
-} from "firebase/firestore";
+import api from "../utils/api";
 import { useScale } from "../utils/scaling";
 import CustomSlider from "../components/CustomSlider";
 import EllAlert, { useEllAlert } from "../components/Alerts";
@@ -37,20 +30,23 @@ export default function NameEntry() {
 
   useEffect(() => {
     const fetchUserData = async () => {
-      const user = auth.currentUser;
-      if (!user) return;
-      const db = getFirestore();
-      const userRef = doc(db, "users", user.uid);
-      const docSnap = await getDoc(userRef);
-      const userData = docSnap.data();
-      if (userData?.role === "Student") {
-        setLow(3);
-        setHigh(13);
-        setAge(8);
-      } else {
-        setLow(15);
-        setHigh(70);
-        setAge(30);
+      try {
+        // Use backend API instead of direct Firestore
+        const response = await api.auth.getUser();
+        if (response.success) {
+          const userData = response.user;
+          if (userData?.role === "Student") {
+            setLow(3);
+            setHigh(13);
+            setAge(8);
+          } else {
+            setLow(15);
+            setHigh(70);
+            setAge(30);
+          }
+        }
+      } catch (e) {
+        console.log("Error fetching user for NameEntry:", e);
       }
     };
     fetchUserData();
@@ -68,56 +64,28 @@ export default function NameEntry() {
 
     setIsSaving(true);
     try {
-      const user = auth.currentUser;
-      if (!user) {
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "User not logged in",
-        });
-        setIsSaving(false);
-        return;
-      }
-
-      const db = getFirestore();
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) {
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "User profile not found.",
-        });
-        setIsSaving(false);
-        return;
-      }
-      const userData = userSnap.data();
-
-      const batch = writeBatch(db);
       const cleanName = name.trim();
 
-      batch.update(userRef, { name: cleanName, age: age });
+      // Use backend API instead of direct Firestore
+      // The backend updateProfile already handles updating class teacherName
+      await api.user.updateProfile({ 
+        name: cleanName, 
+        age: age 
+      });
 
-      if (userData.role === "Teacher") {
-        const classCode = userData.classCode;
-        if (classCode) {
-          const classRef = doc(db, "classes", classCode);
-          batch.update(classRef, {
-            teacherName: cleanName,
-            className: `${cleanName}'s Class`,
-          });
-        }
-      }
-
-      await batch.commit();
       setIsSaving(false);
       navigation.navigate("AvatarSelect");
     } catch (error) {
       console.log("NameEntry Error:", error);
       setIsSaving(false);
-      showAlert({ type: "error", title: "Error", message: error.message });
+      showAlert({ 
+        type: "error", 
+        title: "Error", 
+        message: error.message || "Failed to save profile. Please try again." 
+      });
     }
   };
+
 
   const s = getStyles(scale, verticalScale);
 

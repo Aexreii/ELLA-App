@@ -3,8 +3,7 @@ import { Image } from "expo-image";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import { auth } from "../firebase";
-import { getFirestore, doc, updateDoc } from "firebase/firestore";
+import api from "../utils/api";
 
 export default function AvatarSelect({ navigation }) {
   const route = useRoute();
@@ -14,22 +13,19 @@ export default function AvatarSelect({ navigation }) {
     setAvatar(selectedAvatar);
 
     try {
-      const user = auth.currentUser;
-      const db = getFirestore();
-
-      const userRef = doc(db, "users", user.uid);
-
-      await updateDoc(userRef, {
+      // Use backend API instead of direct Firestore
+      await api.user.updateProfile({
         character: selectedAvatar.toLowerCase(), // "pink", "dino", "owl"
       });
 
-      console.log("Avatar saved to database!");
+      console.log("Avatar saved to database via backend!");
 
       navigation.navigate("HomeScreen");
     } catch (error) {
       console.log("Error saving avatar:", error);
     }
   };
+
   return (
     //ADD A NICKNAME
 

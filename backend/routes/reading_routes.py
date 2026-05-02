@@ -5,352 +5,244 @@ Handles sentence-by-sentence reading tracking and word pronunciation evaluation
 
 from flask import Blueprint, request, jsonify
 from config.firebase_config import get_db
+from firebase_admin import firestore
 from utils.decorators import require_auth
 from datetime import datetime
 
 reading_bp = Blueprint('reading', __name__)
 
-@reading_bp.route('/start', methods=['POST'])
+@reading_bp.route('/start-session', methods=['POST'])
 @require_auth
-def start_reading_session(current_user):
+def start_session(current_user):
     """
-    Start a new reading session for a book
+    Load progress and create a new reading session
     Expected body: { "bookId": "..." }
+    """
+    try:
+        uid = current_user['uid']
+        data = request.get_json()
+        book_id = data.get('bookId')
+        
+        if not book_id:
+            return jsonify({'error': 'bookId is required'}), 400
+            
+        db = get_db()
+        
+        # 1. Get or create persistent userProgress
+        progress_id = f"{uid}_{book_id}"
+        progress_ref = db.collection('userProgress').document(progress_id)
+        progress_doc = progress_ref.get()
+        
+        user_progress = {}
+        if progress_doc.exists:
+            user_progress = progress_doc.to_dict()
+        else:
+            # Get book to know sentence count
+            book_doc = db.collection('books').document(str(book_id)).get()
+            sentence_count = 0
+            if book_doc.exists:
+                sentence_count = book_doc.to_dict().get('sentenceCount', 0)
+            
+            user_progress = {
+                'userId': uid,
+                'bookId': book_id,
+                'currentSentence': 0,
+                'wordResults': None,
+                'totalSentences': sentence_count,
+                'completed': False,
+                'lastReadAt': datetime.now(),
+                'totalSessions': 0,
+                'totalTimeSeconds': 0
+            }
+            progress_ref.set(user_progress)
+            
+        # 2. Create a new reading session record
+        session_ref = db.collection('readingSessions').document()
+        session_id = session_ref.id
+        
+        session_data = {
+            'userId': uid,
+            'bookId': book_id,
+            'startedAt': datetime.now(),
+            'endedAt': None,
+            'sentencesRead': 0,
+            'totalSentences': user_progress.get('totalSentences', 0),
+            'wordsTapped': 0,
+            'recordingsAttempted': 0,
+            'pointsEarned': 0,
+            'completed': False
+        }
+        session_ref.set(session_data)
+        
+        return jsonify({
+            'success': True,
+            'sessionId': session_id,
+            'userProgress': user_progress
+        }), 201
+        
+    except Exception as e:
+        print(f"Start session error: {str(e)}")
+        return jsonify({'error': 'Failed to start session'}), 500
+
+@reading_bp.route('/save-session', methods=['POST'])
+@require_auth
+def save_session(current_user):
+    """
+    Save reading progress and update session details
+    Expected body: { "bookId": "...", "sessionId": "...", "currentSentence": 0, "wordResults": [...], "sentencesRead": 0, "elapsedSeconds": 0, "isFinished": false }
     """
     try:
         uid = current_user['uid']
         data = request.get_json()
         
         book_id = data.get('bookId')
-        
-        if not book_id:
-            return jsonify({'error': 'bookId is required'}), 400
+        session_id = data.get('sessionId')
+        current_sentence = data.get('currentSentence', 0)
+        word_results = data.get('wordResults')
+        sentences_read = data.get('sentencesRead', 0)
+        elapsed_seconds = data.get('elapsedSeconds', 0)
+        is_finished = data.get('isFinished', False)
         
         db = get_db()
+        batch = db.batch()
         
-        # Get book details
-        book_doc = db.collection('books').document(str(book_id)).get()
+        # 1. Update userProgress
+        progress_id = f"{uid}_{book_id}"
+        progress_ref = db.collection('userProgress').document(progress_id)
         
-        if not book_doc.exists:
-            return jsonify({'error': 'Book not found'}), 404
-        
-        book_data = book_doc.to_dict()
-        
-        # Create reading session
-        session_ref = db.collection('reading_sessions').document()
-        session_data = {
-            'sessionId': session_ref.id,
-            'uid': uid,
-            'bookId': book_id,
-            'startTime': datetime.now(),
-            'currentSentence': 0,
-            'totalSentences': book_data.get('sentenceCount', len(book_data.get('contents', []))),
-            'wordsRead': [],
-            'active': True
+        progress_updates = {
+            'currentSentence': current_sentence,
+            'wordResults': word_results,
+            'lastReadAt': datetime.now(),
+            'totalSessions': firestore.Increment(1),
+            'totalTimeSeconds': firestore.Increment(elapsed_seconds)
         }
-        session_ref.set(session_data)
         
-        return jsonify({
-            'success': True,
-            'session': session_data,
-            'message': 'Reading session started'
-        }), 201
-        
-    except Exception as e:
-        print(f"Start reading session error: {str(e)}")
-        return jsonify({'error': 'Failed to start reading session'}), 500
-
-@reading_bp.route('/session/<session_id>', methods=['GET'])
-@require_auth
-def get_reading_session(current_user, session_id):
-    """Get current reading session details"""
-    try:
-        uid = current_user['uid']
-        
-        db = get_db()
-        session_doc = db.collection('reading_sessions').document(session_id).get()
-        
-        if not session_doc.exists:
-            return jsonify({'error': 'Session not found'}), 404
-        
-        session_data = session_doc.to_dict()
-        
-        # Verify session belongs to user
-        if session_data.get('uid') != uid:
-            return jsonify({'error': 'Unauthorized'}), 403
-        
-        return jsonify({
-            'success': True,
-            'session': session_data
-        }), 200
-        
-    except Exception as e:
-        print(f"Get reading session error: {str(e)}")
-        return jsonify({'error': 'Failed to get reading session'}), 500
-
-@reading_bp.route('/record-word', methods=['POST'])
-@require_auth
-def record_word_read(current_user):
-    """
-    Record a word that was read correctly
-    Expected body: { "sessionId": "...", "word": "...", "sentenceIndex": 0, "correct": true, "attempts": 1 }
-    """
-    try:
-        uid = current_user['uid']
-        data = request.get_json()
-        
-        session_id = data.get('sessionId')
-        word = data.get('word')
-        sentence_index = data.get('sentenceIndex', 0)
-        correct = data.get('correct', False)
-        attempts = data.get('attempts', 1)
-        
-        if not session_id or not word:
-            return jsonify({'error': 'sessionId and word are required'}), 400
-        
-        db = get_db()
-        session_ref = db.collection('reading_sessions').document(session_id)
-        session_doc = session_ref.get()
-        
-        if not session_doc.exists:
-            return jsonify({'error': 'Session not found'}), 404
-        
-        session_data = session_doc.to_dict()
-        
-        # Verify session belongs to user
-        if session_data.get('uid') != uid:
-            return jsonify({'error': 'Unauthorized'}), 403
-        
-        # Add word to words read
-        words_read = session_data.get('wordsRead', [])
-        words_read.append({
-            'word': word,
-            'sentenceIndex': sentence_index,
-            'correct': correct,
-            'attempts': attempts,
-            'timestamp': datetime.now()
-        })
-        
-        # Update session
-        session_ref.update({
-            'wordsRead': words_read,
-            'lastActivity': datetime.now()
-        })
-        
-        return jsonify({
-            'success': True,
-            'message': 'Word recorded successfully'
-        }), 200
-        
-    except Exception as e:
-        print(f"Record word error: {str(e)}")
-        return jsonify({'error': 'Failed to record word'}), 500
-
-@reading_bp.route('/advance-sentence', methods=['POST'])
-@require_auth
-def advance_sentence(current_user):
-    """
-    Advance to the next sentence in the reading session
-    Expected body: { "sessionId": "..." }
-    """
-    try:
-        uid = current_user['uid']
-        data = request.get_json()
-        
-        session_id = data.get('sessionId')
-        
-        if not session_id:
-            return jsonify({'error': 'sessionId is required'}), 400
-        
-        db = get_db()
-        session_ref = db.collection('reading_sessions').document(session_id)
-        session_doc = session_ref.get()
-        
-        if not session_doc.exists:
-            return jsonify({'error': 'Session not found'}), 404
-        
-        session_data = session_doc.to_dict()
-        
-        # Verify session belongs to user
-        if session_data.get('uid') != uid:
-            return jsonify({'error': 'Unauthorized'}), 403
-        
-        current_sentence = session_data.get('currentSentence', 0)
-        total_sentences = session_data.get('totalSentences', 0)
-        
-        # Advance to next sentence
-        new_sentence = min(current_sentence + 1, total_sentences)
-        
-        session_ref.update({
-            'currentSentence': new_sentence,
-            'lastActivity': datetime.now()
-        })
-        
-        return jsonify({
-            'success': True,
-            'currentSentence': new_sentence,
-            'completed': new_sentence >= total_sentences
-        }), 200
-        
-    except Exception as e:
-        print(f"Advance sentence error: {str(e)}")
-        return jsonify({'error': 'Failed to advance sentence'}), 500
-
-@reading_bp.route('/complete', methods=['POST'])
-@require_auth
-def complete_reading_session(current_user):
-    """
-    Complete a reading session and calculate rewards
-    Expected body: { "sessionId": "..." }
-    """
-    try:
-        uid = current_user['uid']
-        data = request.get_json()
-        
-        session_id = data.get('sessionId')
-        
-        if not session_id:
-            return jsonify({'error': 'sessionId is required'}), 400
-        
-        db = get_db()
-        session_ref = db.collection('reading_sessions').document(session_id)
-        session_doc = session_ref.get()
-        
-        if not session_doc.exists:
-            return jsonify({'error': 'Session not found'}), 404
-        
-        session_data = session_doc.to_dict()
-        
-        # Verify session belongs to user
-        if session_data.get('uid') != uid:
-            return jsonify({'error': 'Unauthorized'}), 403
-        
-        # Calculate points based on performance
-        words_read = session_data.get('wordsRead', [])
-        current_sentence = session_data.get('currentSentence', 0)
-        total_sentences = session_data.get('totalSentences', 1)
-        book_id = session_data.get('bookId')
-        
-        # Calculate accuracy
-        correct_words = sum(1 for w in words_read if w.get('correct', False))
-        total_attempts = sum(w.get('attempts', 1) for w in words_read)
-        accuracy = correct_words / total_attempts if total_attempts > 0 else 0
-        
-        # Get book difficulty for point multiplier
-        book_doc = db.collection('books').document(str(book_id)).get()
-        difficulty_multiplier = 1.0
-        if book_doc.exists:
-            book_data = book_doc.to_dict()
-            difficulty = book_data.get('difficulty', 'Beginner')
-            if difficulty == 'Intermediate':
-                difficulty_multiplier = 1.5
-            elif difficulty == 'Advanced':
-                difficulty_multiplier = 2.0
-        
-        # Calculate points: base 10 points per sentence * accuracy * difficulty
-        base_points = 10
-        points_earned = int(current_sentence * base_points * accuracy * difficulty_multiplier)
-        
-        # Update session as completed
-        session_ref.update({
-            'active': False,
-            'completedAt': datetime.now(),
-            'pointsEarned': points_earned,
-            'accuracy': accuracy
-        })
-        
-        # Update user progress
-        user_ref = db.collection('users').document(uid)
-        user_doc = user_ref.get()
-        
-        if user_doc.exists:
-            user_data = user_doc.to_dict()
-            progress = user_data.get('progress', [])
-            current_points = user_data.get('points', 0)
-            total_points = user_data.get('totalPoints', 0)
-            unlocked_stickers = user_data.get('unlockedStickers', [1])
+        if is_finished:
+            progress_updates['completed'] = True
             
-            # Update book progress
-            book_progress_found = False
-            for idx, p in enumerate(progress):
-                if str(p.get('bookId')) == str(book_id):
-                    progress[idx] = {
-                        'bookId': book_id,
-                        'sentencesRead': current_sentence,
-                        'totalSentences': total_sentences
-                    }
-                    book_progress_found = True
-                    break
-            
-            if not book_progress_found:
-                progress.append({
-                    'bookId': book_id,
-                    'sentencesRead': current_sentence,
-                    'totalSentences': total_sentences
-                })
-            
-            # Update points
-            new_points = current_points + points_earned
-            new_total_points = total_points + points_earned
-            
-            # Check for new sticker unlocks
-            max_sticker = min(8, (new_total_points // 100) + 1)
-            for i in range(1, max_sticker + 1):
-                if i not in unlocked_stickers:
-                    unlocked_stickers.append(i)
-            
-            user_ref.update({
-                'progress': progress,
-                'points': new_points,
-                'totalPoints': new_total_points,
-                'unlockedStickers': unlocked_stickers,
-                'lastActivity': datetime.now()
+        batch.update(progress_ref, progress_updates)
+        
+        # 2. Update reading session
+        if session_id:
+            session_ref = db.collection('readingSessions').document(session_id)
+            batch.update(session_ref, {
+                'endedAt': datetime.now(),
+                'sentencesRead': sentences_read,
+                'completed': is_finished
             })
+            
+        # 3. Update user's last read book
+        user_ref = db.collection('users').document(uid)
+        batch.update(user_ref, {
+            'lastReadBook': book_id
+        })
         
-        return jsonify({
-            'success': True,
-            'pointsEarned': points_earned,
-            'accuracy': accuracy,
-            'sentencesRead': current_sentence,
-            'message': f'Great job! You earned {points_earned} points!'
-        }), 200
+        batch.commit()
+        
+        return jsonify({'success': True, 'message': 'Session saved successfully'}), 200
         
     except Exception as e:
-        print(f"Complete reading session error: {str(e)}")
-        return jsonify({'error': 'Failed to complete reading session'}), 500
+        print(f"Save session error: {str(e)}")
+        return jsonify({'error': 'Failed to save session'}), 500
 
-@reading_bp.route('/sessions/user', methods=['GET'])
+@reading_bp.route('/award-points', methods=['POST'])
 @require_auth
-def get_user_sessions(current_user):
-    """Get all reading sessions for current user"""
+def award_points(current_user):
+    """
+    Award points to user and record in session
+    Expected body: { "sessionId": "...", "points": 10 }
+    """
     try:
         uid = current_user['uid']
+        data = request.get_json()
+        points = data.get('points', 0)
+        session_id = data.get('sessionId')
         
         db = get_db()
-        sessions = db.collection('reading_sessions')\
-            .where('uid', '==', uid)\
-            .order_by('startTime', direction='DESCENDING')\
-            .limit(20)\
-            .stream()
+        batch = db.batch()
         
-        session_list = []
-        for session in sessions:
-            session_data = session.to_dict()
-            session_data['sessionId'] = session.id
-            
-            # Convert timestamps to ISO format
-            if 'startTime' in session_data:
-                session_data['startTime'] = session_data['startTime'].isoformat()
-            if 'completedAt' in session_data:
-                session_data['completedAt'] = session_data['completedAt'].isoformat()
-            
-            session_list.append(session_data)
+        # Update user points
+        user_ref = db.collection('users').document(uid)
+        batch.update(user_ref, {'points': firestore.Increment(points)})
         
-        return jsonify({
-            'success': True,
-            'sessions': session_list
-        }), 200
+        # Update session points
+        if session_id:
+            session_ref = db.collection('readingSessions').document(session_id)
+            batch.update(session_ref, {'pointsEarned': firestore.Increment(points)})
+            
+        batch.commit()
+        
+        return jsonify({'success': True, 'newPoints': points}), 200
         
     except Exception as e:
-        print(f"Get user sessions error: {str(e)}")
-        return jsonify({'error': 'Failed to get user sessions'}), 500
+        print(f"Award points error: {str(e)}")
+        return jsonify({'error': 'Failed to award points'}), 500
+
+@reading_bp.route('/word-event', methods=['POST'])
+@require_auth
+def record_word_event(current_user):
+    """
+    Record a word tap event
+    Expected body: { "bookId": "...", "sessionId": "...", "word": "...", "tapCount": 1 }
+    """
+    try:
+        uid = current_user['uid']
+        data = request.get_json()
+        
+        book_id = data.get('bookId')
+        session_id = data.get('sessionId')
+        word = data.get('word', '').lower().strip()
+        tap_count = data.get('tapCount', 1)
+        
+        if not book_id or not word:
+            return jsonify({'error': 'bookId and word are required'}), 400
+            
+        db = get_db()
+        word_event_id = f"{uid}_{book_id}_{word}"
+        word_ref = db.collection('wordEvents').document(word_event_id)
+        
+        word_doc = word_ref.get()
+        if word_doc.exists:
+            word_ref.update({
+                'tapCount': firestore.Increment(tap_count),
+                'lastTappedAt': datetime.now()
+            })
+        else:
+            word_ref.set({
+                'userId': uid,
+                'bookId': book_id,
+                'sessionId': session_id,
+                'word': word,
+                'tapCount': tap_count,
+                'lastTappedAt': datetime.now()
+            })
+            
+        # Also update session wordsTapped count
+        if session_id:
+            session_ref = db.collection('readingSessions').document(session_id)
+            session_ref.update({'wordsTapped': firestore.Increment(tap_count)})
+            
+        return jsonify({'success': True}), 200
+        
+    except Exception as e:
+        print(f"Record word event error: {str(e)}")
+        return jsonify({'error': 'Failed to record word event'}), 500
+
+@reading_bp.route('/record-attempt', methods=['POST'])
+@require_auth
+def record_recording_attempt(current_user):
+    """Increment recording attempts in session"""
+    try:
+        data = request.get_json()
+        session_id = data.get('sessionId')
+        
+        if session_id:
+            db = get_db()
+            db.collection('readingSessions').document(session_id).update({
+                'recordingsAttempted': firestore.Increment(1)
+            })
+            
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

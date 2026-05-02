@@ -1,9 +1,10 @@
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
-import { auth } from "../firebase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import { ROOT_URL } from "./api";
 
-export const BACKEND_URL = "https://ella-app-e0gb.onrender.com";
+export const BACKEND_URL = ROOT_URL;
 
 export const RECORDING_OPTIONS = {
   isMeteringEnabled: false,
@@ -67,16 +68,12 @@ function isSimilarWord(spoken, expected) {
   const distance = getEditDistance(spoken, expected);
 
   // Allow small mistakes (1 char difference)
-  // Note: You might want to adjust this for very short words (e.g., length < 3)
-  // to avoid false positives like matching "to" with "do".
   if (distance <= 1) return true;
 
   return false;
 }
 
 // ── Normalize a transcript word against the expected word list ──
-// If the spoken word is within the allowed edit distance of an
-// expected word, swap it.
 function resolveSimilarWords(spokenWords, expectedWords) {
   const expectedClean = expectedWords.map((w) =>
     w.replace(/[^a-zA-Z0-9]/g, "").toLowerCase(),
@@ -85,34 +82,21 @@ function resolveSimilarWords(spokenWords, expectedWords) {
   return spokenWords.map((word) => {
     const clean = word.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 
-    // Check if the cleaned spoken word is similar to any expected word
     for (let i = 0; i < expectedClean.length; i++) {
       if (isSimilarWord(clean, expectedClean[i])) {
-        // Return the expected word to normalize the transcript
         return expectedClean[i];
       }
     }
 
-    // If no similar word is found, return the original spoken word
     return word;
   });
 }
 
-// ─────────────────────────────────────────────────────────────
-// Build a hints payload for the STT engine:
-//  - the expected words themselves
-//  - the full sentence as a phrase hint (helps first-word accuracy)
-// ─────────────────────────────────────────────────────────────
 function buildHints(expectedWords) {
   const hints = [...expectedWords];
-
-  // Add the full sentence as a phrase — this significantly helps
-  // the engine with first-word recognition and short utterances
   if (expectedWords.length > 0) {
     hints.push(expectedWords.join(" "));
   }
-
-  // Deduplicate
   return [...new Set(hints)];
 }
 
@@ -127,7 +111,6 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
     fileInfo.exists,
   );
 
-  // ── Guard: reject recordings that are too short to be valid ──
   if (!fileInfo.exists || (fileInfo.size ?? 0) < 8000) {
     console.log("[speech] recording too short, skipping transcription");
     return { success: false, transcript: null, confidence: 0 };
@@ -137,13 +120,12 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
     encoding: "base64",
   });
 
-  const token = await auth.currentUser?.getIdToken();
+  const token = await AsyncStorage.getItem("idToken");
   if (!token) throw new Error("Not logged in");
 
   const encoding = Platform.OS === "android" ? "MP4" : "WAV";
   const hints = buildHints(expectedWords);
 
-  // ── Fetch with timeout — gracefully handle long recordings ──
   let response;
   try {
     const controller = new AbortController();
@@ -170,7 +152,7 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
       console.log("[speech] request timed out after 30s");
       return { success: false, transcript: null, confidence: 0 };
     }
-    throw err; // re-throw unexpected network errors
+    throw err;
   }
 
   const responseText = await response.text();
@@ -181,7 +163,6 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
 
   const parsed = JSON.parse(responseText);
 
-  // ── Post-process: resolve similar words in transcript ──────────
   if (parsed.transcript) {
     const spokenWords = parsed.transcript.trim().split(/\s+/);
     const resolved = resolveSimilarWords(spokenWords, expectedWords);
@@ -193,7 +174,7 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
 };
 
 export const pronounceWord = async (word, voice = "en-US-Neural2-F") => {
-  const token = await auth.currentUser?.getIdToken();
+  const token = await AsyncStorage.getItem("idToken");
   if (!token) throw new Error("Not logged in");
 
   const response = await fetch(`${BACKEND_URL}/api/speech/pronounce`, {

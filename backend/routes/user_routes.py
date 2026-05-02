@@ -1,245 +1,230 @@
 """
-User Progress Routes
-Handles user progress, scores, and achievements
+User Progress and Profile Routes
+Handles user progress, stats, profile updates, and reports
 """
 
 from flask import Blueprint, request, jsonify
 from config.firebase_config import get_db
+from firebase_admin import firestore
 from utils.decorators import require_auth
 from datetime import datetime
 
 user_bp = Blueprint('user', __name__)
 
-@user_bp.route('/progress', methods=['GET'])
+@user_bp.route('/profile', methods=['GET'])
 @require_auth
-def get_progress(current_user):
-    """Get user's learning progress"""
+def get_profile(current_user):
+    """Get the current user's profile data"""
     try:
         uid = current_user['uid']
-        
         db = get_db()
         user_doc = db.collection('users').document(uid).get()
         
         if not user_doc.exists:
-            return jsonify({'error': 'User not found'}), 404
-        
+            return jsonify({'error': 'User profile not found'}), 404
+            
         user_data = user_doc.to_dict()
-        progress = user_data.get('progress', [])
-        points = user_data.get('points', 0)
-        total_points = user_data.get('totalPoints', 0)
-        unlocked_stickers = user_data.get('unlockedStickers', [1])
+        user_data['id'] = user_doc.id
         
-        return jsonify({
-            'success': True,
-            'progress': progress,
-            'points': points,
-            'totalPoints': total_points,
-            'unlockedStickers': unlocked_stickers
-        }), 200
-        
-    except Exception as e:
-        print(f"Get progress error: {str(e)}")
-        return jsonify({'error': 'Failed to get progress'}), 500
+        # Format dates
+        for key in ['createdAt', 'updatedAt', 'lastLogin']:
+            if data.get(key) and hasattr(data[key], 'isoformat'):
+                data[key] = data[key].isoformat()
 
-@user_bp.route('/progress', methods=['POST'])
-@require_auth
-def update_progress(current_user):
-    """
-    Update user's progress
-    Expected body: { "bookId": "...", "sentencesRead": 3, "totalSentences": 5, "pointsEarned": 50 }
-    """
-    try:
-        uid = current_user['uid']
-        data = request.get_json()
-        
-        book_id = data.get('bookId')
-        sentences_read = data.get('sentencesRead', 0)
-        total_sentences = data.get('totalSentences', 0)
-        points_earned = data.get('pointsEarned', 0)
-        
-        if not book_id:
-            return jsonify({'error': 'bookId is required'}), 400
-        
-        db = get_db()
-        user_ref = db.collection('users').document(uid)
-        user_doc = user_ref.get()
-        
-        if not user_doc.exists:
-            return jsonify({'error': 'User not found'}), 404
-        
-        user_data = user_doc.to_dict()
-        progress = user_data.get('progress', [])
-        current_points = user_data.get('points', 0)
-        current_total_points = user_data.get('totalPoints', 0)
-        unlocked_stickers = user_data.get('unlockedStickers', [1])
-        
-        # Find existing progress for this book
-        book_progress = None
-        for idx, p in enumerate(progress):
-            if str(p.get('bookId')) == str(book_id):
-                book_progress = idx
-                break
-        
-        # Update or create progress entry
-        new_progress_entry = {
-            'bookId': book_id,
-            'sentencesRead': sentences_read,
-            'totalSentences': total_sentences
-        }
-        
-        if book_progress is not None:
-            progress[book_progress] = new_progress_entry
-        else:
-            progress.append(new_progress_entry)
-        
-        # Update points
-        new_points = current_points + points_earned
-        new_total_points = current_total_points + points_earned
-        
-        # Check for new sticker unlocks (every 100 total points unlocks a sticker)
-        max_sticker = min(8, (new_total_points // 100) + 1)
-        for i in range(1, max_sticker + 1):
-            if i not in unlocked_stickers:
-                unlocked_stickers.append(i)
-        
-        # Update in database
-        user_ref.update({
-            'progress': progress,
-            'points': new_points,
-            'totalPoints': new_total_points,
-            'unlockedStickers': unlocked_stickers,
-            'lastActivity': datetime.now()
-        })
-        
-        # Save activity record
-        completed = sentences_read >= total_sentences
-        activity_ref = db.collection('activities').document()
-        activity_ref.set({
-            'uid': uid,
-            'bookId': book_id,
-            'sentencesRead': sentences_read,
-            'totalSentences': total_sentences,
-            'pointsEarned': points_earned,
-            'completed': completed,
-            'timestamp': datetime.now()
-        })
-        
         return jsonify({
             'success': True,
-            'progress': progress,
-            'points': new_points,
-            'totalPoints': new_total_points,
-            'unlockedStickers': unlocked_stickers,
-            'message': 'Progress updated successfully'
+            'user': user_data
         }), 200
-        
     except Exception as e:
-        print(f"Update progress error: {str(e)}")
-        return jsonify({'error': 'Failed to update progress'}), 500
-
-@user_bp.route('/achievements', methods=['GET'])
-@require_auth
-def get_achievements(current_user):
-    """Get user's achievements and badges"""
-    try:
-        uid = current_user['uid']
-        
-        db = get_db()
-        user_doc = db.collection('users').document(uid).get()
-        
-        if not user_doc.exists:
-            return jsonify({'error': 'User not found'}), 404
-        
-        user_data = user_doc.to_dict()
-        progress = user_data.get('progress', [])
-        unlocked_stickers = user_data.get('unlockedStickers', [1])
-        total_points = user_data.get('totalPoints', 0)
-        current_points = user_data.get('points', 0)
-        
-        # Calculate completed books
-        completed_books = [p for p in progress if p.get('sentencesRead', 0) >= p.get('totalSentences', 0)]
-        
-        return jsonify({
-            'success': True,
-            'achievements': {
-                'unlockedStickers': unlocked_stickers,
-                'totalPoints': total_points,
-                'currentPoints': current_points,
-                'booksCompleted': len(completed_books)
-            }
-        }), 200
-        
-    except Exception as e:
-        print(f"Get achievements error: {str(e)}")
-        return jsonify({'error': 'Failed to get achievements'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @user_bp.route('/profile', methods=['PUT'])
 @require_auth
 def update_profile(current_user):
     """
     Update user profile
-    Expected body: { "name": "...", "character": "...", "enrolledCode": "..." }
+    Expected body: { "name": "...", "age": 10, "character": "...", "role": "...", "classEnrolled": "...", "points": 100 }
     """
     try:
         uid = current_user['uid']
         data = request.get_json()
         
-        name = data.get('name')
-        character = data.get('character')
-        enrolled_code = data.get('enrolledCode')
-        class_code = data.get('classCode')
-        
         db = get_db()
         user_ref = db.collection('users').document(uid)
+        user_doc = user_ref.get()
+        user_data_old = user_doc.to_dict() if user_doc.exists else {}
+        
+        # Fields that are allowed to be updated directly
+        allowed_fields = [
+            'name', 'age', 'character', 'role', 
+            'classEnrolled', 'enrolledCode', 'classCode',
+            'points', 'totalPoints', 'customAvatarUrl',
+            'unlockedStickers', 'ownedStickers'
+        ]
         
         update_data = {}
-        if name:
-            update_data['name'] = name
-        if character:
-            update_data['character'] = character
-        if enrolled_code is not None:
-            update_data['enrolledCode'] = enrolled_code
-        if class_code is not None:
-            update_data['classCode'] = class_code
+        for field in allowed_fields:
+            if field in data:
+                update_data[field] = data[field]
+                
+                # Special cases for redundant fields used in frontend
+                if field == 'enrolledCode':
+                    update_data['classEnrolled'] = data[field]
+                if field == 'classEnrolled':
+                    update_data['enrolledCode'] = data[field]
         
         if update_data:
+            update_data['updatedAt'] = datetime.now()
             user_ref.update(update_data)
+            
+            # Update class teacher name if teacher
+            if 'name' in update_data and user_data_old.get('role') == 'Teacher':
+                class_id = user_data_old.get('ownedClassId')
+                if class_id:
+                    db.collection('classes').document(class_id).update({
+                        'teacherName': update_data['name'],
+                        'className': f"{update_data['name']}'s Class"
+                    })
+            
+        # Get updated user
+        updated_doc = user_ref.get()
+        user_data = updated_doc.to_dict()
+        user_data['id'] = updated_doc.id
+        
+        # Format dates
+        for key in ['createdAt', 'updatedAt', 'lastLogin']:
+            if user_data.get(key) and hasattr(user_data[key], 'isoformat'):
+                user_data[key] = user_data[key].isoformat()
         
         return jsonify({
             'success': True,
-            'message': 'Profile updated successfully'
+            'message': 'Profile updated successfully',
+            'user': user_data
         }), 200
         
     except Exception as e:
         print(f"Update profile error: {str(e)}")
         return jsonify({'error': 'Failed to update profile'}), 500
 
+@user_bp.route('/full-stats', methods=['GET'])
+@require_auth
+def get_full_stats(current_user):
+    """
+    Get comprehensive stats for the current user, 
+    joining progress, sessions and book details.
+    """
+    try:
+        uid = current_user['uid']
+        db = get_db()
+        
+        # 1. Get Progress Docs
+        progress_docs = db.collection('userProgress').where('userId', '==', uid).get()
+        progress_list = [d.to_dict() for d in progress_docs]
+        
+        # 2. Get Session Docs
+        session_docs = db.collection('readingSessions').where('userId', '==', uid).get()
+        session_list = []
+        for d in session_docs:
+            data = d.to_dict()
+            # Convert datetime to string
+            for key in ['startedAt', 'endedAt']:
+                if data.get(key) and hasattr(data[key], 'isoformat'):
+                    data[key] = data[key].isoformat()
+            session_list.append(data)
+            
+        # 3. Join with Book details for completed/abandoned books
+        completed_books = []
+        abandoned_books = []
+        
+        for p in progress_list:
+            book_id = p.get('bookId')
+            if not book_id: continue
+            
+            book_doc = db.collection('books').document(str(book_id)).get()
+            if book_doc.exists:
+                book_data = book_doc.to_dict()
+                book_data['id'] = book_doc.id
+                if p.get('completed'):
+                    completed_books.append(book_data)
+                else:
+                    abandoned_books.append(book_data)
+        
+        # 4. Calculate stats
+        total_time_seconds = sum(p.get('totalTimeSeconds', 0) for p in progress_list)
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'totalTimeSeconds': total_time_seconds,
+                'booksReadCount': len(completed_books),
+                'abandonedCount': len(abandoned_books),
+                'sessionCount': len(session_list)
+            },
+            'completedBooks': completed_books,
+            'abandonedBooks': abandoned_books,
+            'sessions': session_list
+        }), 200
+        
+    except Exception as e:
+        print(f"Get full stats error: {str(e)}")
+        return jsonify({'error': 'Failed to get full stats'}), 500
+
 @user_bp.route('/history', methods=['GET'])
 @require_auth
 def get_activity_history(current_user):
-    """Get user's activity history"""
+    """Get chronological history of user activities"""
     try:
         uid = current_user['uid']
-        
         db = get_db()
-        activities = db.collection('activities')\
-            .where('uid', '==', uid)\
-            .order_by('timestamp', direction='DESCENDING')\
-            .limit(20)\
-            .stream()
+        
+        sessions = db.collection('readingSessions').where('userId', '==', uid).order_by('startedAt', direction='DESCENDING').limit(20).get()
         
         activity_list = []
-        for activity in activities:
-            activity_data = activity.to_dict()
-            if 'timestamp' in activity_data:
-                activity_data['timestamp'] = activity_data['timestamp'].isoformat()
-            activity_list.append(activity_data)
-        
+        for s in sessions:
+            data = s.to_dict()
+            ts = data.get('startedAt')
+            activity_list.append({
+                'type': 'reading_session',
+                'bookId': data.get('bookId'),
+                'timestamp': ts.isoformat() if hasattr(ts, 'isoformat') else ts,
+                'details': f"Read {data.get('sentencesRead', 0)} sentences"
+            })
+            
         return jsonify({
             'success': True,
             'activities': activity_list
         }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@user_bp.route('/report', methods=['POST'])
+@require_auth
+def create_report(current_user):
+    """
+    Create a new user report/feedback
+    Expected body: { "name": "...", "email": "...", "subject": "...", "comment": "..." }
+    """
+    try:
+        uid = current_user['uid']
+        data = request.get_json()
+        
+        db = get_db()
+        report_data = {
+            'userId': uid,
+            'name': data.get('name'),
+            'email': data.get('email'),
+            'subject': data.get('subject'),
+            'comment': data.get('comment'),
+            'createdAt': datetime.now()
+        }
+        
+        db.collection('reports').add(report_data)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Report submitted successfully'
+        }), 201
         
     except Exception as e:
-        print(f"Get history error: {str(e)}")
-        return jsonify({'error': 'Failed to get history'}), 500
+        print(f"Create report error: {str(e)}")
+        return jsonify({'error': 'Failed to submit report'}), 500
