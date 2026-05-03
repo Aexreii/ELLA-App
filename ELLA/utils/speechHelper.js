@@ -1,33 +1,9 @@
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
-import { auth, db } from "../firebase"; // make sure db is exported from firebase.js
-import { doc, getDoc } from "firebase/firestore";
+import { auth } from "../firebase";
 import { Platform } from "react-native";
 
-// Fallback URL in case Firestore fetch fails
-const FALLBACK_URL = "https://ella-app-e0gb.onrender.com";
-
-let _backendUrl = null;
-
-export const getBackendUrl = async () => {
-  if (_backendUrl) return _backendUrl; // cached, don't re-fetch
-
-  try {
-    const snap = await getDoc(doc(db, "config", "backend"));
-    if (snap.exists() && snap.data().url) {
-      _backendUrl = snap.data().url;
-      console.log("[config] backend URL loaded:", _backendUrl);
-    } else {
-      console.warn("[config] no URL in Firestore, using fallback");
-      _backendUrl = FALLBACK_URL;
-    }
-  } catch (err) {
-    console.warn("[config] failed to fetch backend URL, using fallback:", err);
-    _backendUrl = FALLBACK_URL;
-  }
-
-  return _backendUrl;
-};
+export const BACKEND_URL = "https://ella-app-e0gb.onrender.com";
 
 export const RECORDING_OPTIONS = {
   isMeteringEnabled: false,
@@ -141,7 +117,6 @@ function buildHints(expectedWords) {
 }
 
 export const transcribeSentence = async (recordingUri, expectedWords = []) => {
-  const BACKEND_URL = await getBackendUrl();
   console.log("[speech] uri:", recordingUri);
 
   const fileInfo = await FileSystem.getInfoAsync(recordingUri);
@@ -164,6 +139,7 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
 
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error("Not logged in");
+
   const encoding = Platform.OS === "android" ? "MP4" : "WAV";
   const hints = buildHints(expectedWords);
 
@@ -217,7 +193,6 @@ export const transcribeSentence = async (recordingUri, expectedWords = []) => {
 };
 
 export const pronounceWord = async (word, voice = "en-US-Neural2-F") => {
-  const BACKEND_URL = await getBackendUrl();
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error("Not logged in");
 
