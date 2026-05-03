@@ -129,11 +129,6 @@ function cleanWord(w) {
   return w.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 }
 
-// ─────────────────────────────────────────────────────────────
-// How many words are evaluated per mic attempt
-// ─────────────────────────────────────────────────────────────
-const CHUNK_SIZE = 3;
-
 const ROW_SEP = "||";
 
 function flattenWordResults(wordResults) {
@@ -804,12 +799,12 @@ export default function ReadBook({ route, navigation }) {
       const uri = recordingRef.current.getURI();
       recordingRef.current = null;
 
-      // ── Determine the current 3-word chunk starting at activeWordIndex ──
-      const chunkStart = activeWordIndex;
-      const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, sentenceWords.length);
-      const chunkWords = sentenceWords.slice(chunkStart, chunkEnd);
+      const currentResults = wordResultsRef.current[currentSentence];
+      const remainingWords = sentenceWords.filter(
+        (_, i) => currentResults[i] !== "correct",
+      );
 
-      const result = await transcribeSentence(uri, chunkWords);
+      const result = await transcribeSentence(uri, remainingWords);
 
       if (!result.success || !result.transcript) {
         showAlert({
@@ -821,21 +816,12 @@ export default function ReadBook({ route, navigation }) {
       }
 
       const spokenWords = result.transcript.trim().split(/\s+/);
+      const remainingResults = alignWords(remainingWords, spokenWords);
 
-      const currentResults = wordResultsRef.current[currentSentence];
-
-      // Always re-judge every word in the chunk from scratch.
-      // If you say all 3 correctly → all green.
-      // If you previously got words 1-2 right but say them wrong this time → they go red.
-      const chunkResults = alignWords(chunkWords, spokenWords);
-
-      // Merge chunk results back into the full sentence.
-      // Words outside the chunk keep their result (clear transient orange).
-      const mergedResults = currentResults.map((existing, i) => {
-        if (i >= chunkStart && i < chunkEnd) {
-          return chunkResults[i - chunkStart] ?? "wrong";
-        }
-        return existing === "orange" ? null : existing;
+      let remainingIndex = 0;
+      const mergedResults = currentResults.map((existing) => {
+        if (existing === "correct") return "correct";
+        return remainingResults[remainingIndex++] ?? "wrong";
       });
 
       setWordResults((prev) => {
@@ -852,46 +838,15 @@ export default function ReadBook({ route, navigation }) {
         }).catch(() => {});
       }
 
-      const chunkAllCorrect = chunkResults.every((r) => r === "correct");
-      const sentenceAllCorrect = mergedResults.every((r) => r === "correct");
-
-      if (sentenceAllCorrect) {
+      const allCorrect = mergedResults.every((r) => r === "correct");
+      if (allCorrect) {
         const confidence = result.confidence ?? 1.0;
         const pointsEarned = Math.max(1, Math.floor(confidence * 5));
         awardPoints(currentSentence, pointsEarned);
         showFeedback("correct");
-
-        // Auto-advance after a short delay so the feedback is visible
-        setTimeout(async () => {
-          sentencesReadRef.current = Math.max(
-            sentencesReadRef.current,
-            currentSentence + 1,
-          );
-          if (!isLastSentence) {
-            setCurrentSentence((prev) => prev + 1);
-          } else {
-            await saveAndExit(true);
-            congratsScaleAnim.setValue(0);
-            Animated.spring(congratsScaleAnim, {
-              toValue: 1,
-              useNativeDriver: true,
-              tension: 120,
-              friction: 8,
-            }).start();
-            setShowCongrats(true);
-          }
-        }, 1200);
-      } else if (chunkAllCorrect) {
-        // Chunk passed — advance activeWordIndex to the next un-correct word
-        showFeedback("correct");
-        const nextIdx = mergedResults.findIndex(
-          (r, i) => i >= chunkEnd && r !== "correct",
-        );
-        if (nextIdx !== -1) setActiveWordIndex(nextIdx);
       } else {
-        // At least one word in the chunk was wrong — stay on chunk start
-        const firstWrong = chunkResults.findIndex((r) => r === "wrong");
-        if (firstWrong !== -1) setActiveWordIndex(chunkStart + firstWrong);
+        const firstWrong = mergedResults.findIndex((r) => r === "wrong");
+        if (firstWrong !== -1) setActiveWordIndex(firstWrong);
         showFeedback("wrong");
       }
     } catch (error) {
@@ -1145,7 +1100,7 @@ export default function ReadBook({ route, navigation }) {
       <Text style={s.hintText}>
         {allWordsCorrect
           ? "All words read! Tap → to continue"
-          : `Read words ${activeWordIndex + 1}–${Math.min(activeWordIndex + CHUNK_SIZE, sentenceWords.length)} aloud`}
+          : `Tap a word to hear it pronounced`}
       </Text>
 
       {/* ── Avatar: slides up only when feedback is active ── */}
