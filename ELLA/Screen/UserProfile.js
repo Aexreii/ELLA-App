@@ -46,18 +46,11 @@ function getReadingLevel(completedBooks) {
   const avg =
     completedBooks.reduce((sum, b) => sum + (diffMap[b.difficulty] ?? 1), 0) /
     count;
-  console.log("Reading level calc:", { count, avg });
   if (avg >= 20.5 || (avg >= 10.0 && count >= 50)) return "Advanced";
   if (avg >= 10.5 || count >= 30) return "Intermediate";
   return "Beginner";
 }
 
-/**
- * FIX (class aggregates): getReadingLevelFromBooks accepts an array of
- * completed book objects per student — used in fetchClassAggregates where
- * we need to join progress docs with book difficulty data.
- * Reuses the same logic as getReadingLevel above.
- */
 const getReadingLevelFromBooks = getReadingLevel;
 
 function formatTime(seconds) {
@@ -224,7 +217,6 @@ export default function UserProfile() {
     fetchStats();
   }, []);
 
-  // ── Fetch class-wide aggregates for teacher ────────────
   const fetchClassAggregates = async (uid) => {
     try {
       setClassAggLoading(true);
@@ -243,10 +235,7 @@ export default function UserProfile() {
       const uniqueStudentIds = [...new Set(allStudentIds)];
       if (uniqueStudentIds.length === 0) return;
 
-      // ── FIX: build a book difficulty cache so we can compute reading
-      // level correctly without hardcoding difficulty per student ──────
       const bookDifficultyCache = {};
-
       const sessionsByStudent = {};
       const progressByStudent = {};
 
@@ -272,7 +261,6 @@ export default function UserProfile() {
         }),
       );
 
-      // Pre-fetch all unique book IDs across all students to build the cache
       const allBookIds = new Set();
       for (const sid of uniqueStudentIds) {
         const progress = progressByStudent[sid] ?? [];
@@ -293,7 +281,6 @@ export default function UserProfile() {
         }),
       );
 
-      // ── Compute aggregates ──────────────────────────────
       const levelCounts = { Beginner: 0, Intermediate: 0, Advanced: 0 };
       let totalBooksCompleted = 0;
       const bookReadCounts = {};
@@ -305,8 +292,6 @@ export default function UserProfile() {
         const progress = progressByStudent[sid] ?? [];
         const userData = progress._userData ?? {};
 
-        // FIX: build completed book objects (with difficulty) per student
-        // so getReadingLevel receives books, not sessions
         const completedBookObjs = progress
           .filter((p) => p.completed && p.bookId)
           .map((p) => bookDifficultyCache[p.bookId])
@@ -336,7 +321,6 @@ export default function UserProfile() {
         }
       }
 
-      // Most / least read books — reuse the already-cached book data
       const bookEntries = Object.entries(bookReadCounts);
       let mostReadBook = null;
       let leastReadBook = null;
@@ -376,158 +360,163 @@ export default function UserProfile() {
     }
   };
 
-  const fetchStats = async () => {
-    try {
-      const db = getFirestore();
-      const uid = currUser?.uid ?? currUser?.id;
-      if (!uid) return;
+  // ── STUDENT: fast single-doc fetch from userStats ──────
+  const fetchStudentStats = async (uid) => {
+    const db = getFirestore();
 
-      const progressSnap = await getDocs(
-        query(collection(db, "userProgress"), where("userId", "==", uid)),
+    // Fetch userStats + user doc in parallel (need user doc for avatar/stickers)
+    const [statsSnap, userSnap, classSnap] = await Promise.all([
+      getDoc(doc(db, "userStats", uid)),
+      getDoc(doc(db, "users", uid)),
+      // We need classEnrolled from user doc first — do it after
+      Promise.resolve(null),
+    ]);
+
+    const userData = userSnap.exists() ? userSnap.data() : {};
+
+    // Sync avatar state
+    if (userData?.customAvatarUrl !== undefined) {
+      setCustomAvatarUrl(userData.customAvatarUrl ?? null);
+    }
+    if (userData?.character) {
+      setSelectedCharacter(userData.character);
+    }
+
+    // Fetch enrolled class if present
+    const classIdFromUser = userData?.classEnrolled ?? null;
+    if (classIdFromUser) {
+      const enrolledClassSnap = await getDoc(
+        doc(db, "classes", classIdFromUser),
       );
-      const progressDocs = progressSnap.docs.map((d) => ({
-        docId: d.id,
-        ...d.data(),
-      }));
-
-      const booksCompleted = progressDocs.filter((p) => p.completed).length;
-      const totalTimeSeconds = progressDocs.reduce(
-        (sum, p) => sum + (p.totalTimeSeconds ?? 0),
-        0,
-      );
-
-      // ── FIX: fetch completed book docs FIRST so we can pass them to
-      // getReadingLevel instead of the sessions array ─────────────────
-      const completedProgressDocs = progressDocs.filter(
-        (p) => p.completed && p.bookId,
-      );
-      const uniqueCompletedBookIds = [
-        ...new Set(completedProgressDocs.map((p) => p.bookId)),
-      ];
-
-      let completedBookDocs = [];
-      if (uniqueCompletedBookIds.length > 0) {
-        const fetched = await Promise.all(
-          uniqueCompletedBookIds.map(async (bookId) => {
-            const snap = await getDoc(doc(db, "books", bookId));
-            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
-          }),
-        );
-        completedBookDocs = fetched.filter(Boolean);
-        setCompletedBooks(completedBookDocs);
-      }
-
-      // Abandoned books (started but not completed)
-      const abandonedProgressDocs = progressDocs.filter(
-        (p) => !p.completed && p.bookId,
-      );
-      const uniqueAbandonedBookIds = [
-        ...new Set(abandonedProgressDocs.map((p) => p.bookId)),
-      ];
-      if (uniqueAbandonedBookIds.length > 0) {
-        const bookDocs = await Promise.all(
-          uniqueAbandonedBookIds.map(async (bookId) => {
-            const snap = await getDoc(doc(db, "books", bookId));
-            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
-          }),
-        );
-        setAbandonedBooks(bookDocs.filter(Boolean));
-      }
-
-      const sessionsSnap = await getDocs(
-        query(collection(db, "readingSessions"), where("userId", "==", uid)),
-      );
-      const sessionDocs = sessionsSnap.docs.map((d) => d.data());
-
-      const userSnap = await getDoc(doc(db, "users", uid));
-      const userData = userSnap.data();
-      const stickersUnlocked = userData?.ownedStickers?.length ?? 0;
-
-      if (userData?.customAvatarUrl !== undefined) {
-        setCustomAvatarUrl(userData.customAvatarUrl ?? null);
-      }
-      if (userData?.character) {
-        setSelectedCharacter(userData.character);
-      }
-
-      if (!isTeacher) {
-        const classIdFromUser = userData?.classEnrolled;
-        if (classIdFromUser) {
-          const classSnap = await getDoc(doc(db, "classes", classIdFromUser));
-          if (classSnap.exists()) {
-            const classData = classSnap.data();
-            setEnrolledClass({
-              id: classSnap.id,
-              code: classData.code || classSnap.id,
-              teacherName: classData.teacherName || "Unknown Teacher",
-              teacherId: classData.teacherId,
-            });
-          }
-        }
-      }
-
-      const streak = computeStreak(sessionDocs);
-      const mostActiveDay = getMostActiveDay(sessionDocs);
-      const lastActiveDate = getLastActive(sessionDocs);
-      const daysSinceLastSession = lastActiveDate
-        ? daysSince(lastActiveDate)
-        : null;
-      const avgSessionDurationSecs = getAvgSessionDuration(sessionDocs);
-      const sessionsStarted = sessionDocs.length;
-      const sessionsCompleted = sessionDocs.filter((s) => s.completed).length;
-      const engagementRate =
-        sessionsStarted > 0
-          ? Math.round((sessionsCompleted / sessionsStarted) * 100)
-          : 0;
-
-      let managedClassCount = 0;
-      let booksUploaded = 0;
-      let totalStudents = 0;
-
-      if (isTeacher) {
-        const classesSnap = await getDocs(
-          query(collection(db, "classes"), where("teacherID", "==", uid)),
-        );
-        managedClassCount = classesSnap.size;
-        classesSnap.docs.forEach((d) => {
-          totalStudents += d.data().students?.length ?? 0;
+      if (enrolledClassSnap.exists()) {
+        const classData = enrolledClassSnap.data();
+        setEnrolledClass({
+          id: enrolledClassSnap.id,
+          code: classData.code || enrolledClassSnap.id,
+          teacherName: classData.teacherName || "Unknown Teacher",
+          teacherId: classData.teacherId,
         });
+      }
+    }
 
-        const booksSnap = await getDocs(
+    if (!statsSnap.exists()) {
+      // userStats doc not yet created (user hasn't read anything)
+      // Fall back to showing zeroes — backfill will handle existing data
+      setStats({
+        booksRead: 0,
+        readingLevel: "Beginner",
+        stickersUnlocked: userData?.ownedStickers?.length ?? 0,
+        readingTime: "0 mins",
+        streak: 0,
+        mostActiveDay: "—",
+        lastActiveDate: null,
+        daysSinceLastSession: null,
+        avgSessionDuration: "0 mins",
+        sessionsStarted: 0,
+        sessionsCompleted: 0,
+        engagementRate: 0,
+        abandonedCount: 0,
+      });
+      setCompletedBooks([]);
+      setAbandonedBooks([]);
+      return;
+    }
+
+    const s = statsSnap.data();
+
+    // lastActiveDate comes back as a Firestore Timestamp
+    const lastActiveDate = s.lastActiveDate?.toDate
+      ? s.lastActiveDate.toDate()
+      : s.lastActiveDate
+        ? new Date(s.lastActiveDate)
+        : null;
+
+    const daysSinceLastSession = lastActiveDate
+      ? daysSince(lastActiveDate)
+      : null;
+
+    setCompletedBooks(s.completedBooks ?? []);
+    setAbandonedBooks(s.abandonedBooks ?? []);
+
+    setStats({
+      booksRead: s.booksCompleted ?? 0,
+      readingLevel: getReadingLevel(s.completedBooks ?? []),
+      stickersUnlocked: userData?.ownedStickers?.length ?? 0,
+      readingTime: formatTime(s.totalTimeSeconds ?? 0),
+      streak: s.streak ?? 0,
+      mostActiveDay: s.mostActiveDay ?? "—",
+      lastActiveDate,
+      daysSinceLastSession,
+      avgSessionDuration: formatDuration(s.avgSessionDurationSecs ?? 0),
+      sessionsStarted: s.sessionsStarted ?? 0,
+      sessionsCompleted: s.sessionsCompleted ?? 0,
+      engagementRate:
+        (s.sessionsStarted ?? 0) > 0
+          ? Math.round(((s.sessionsCompleted ?? 0) / s.sessionsStarted) * 100)
+          : 0,
+      abandonedCount: (s.abandonedBookIds ?? []).length,
+    });
+  };
+
+  // ── TEACHER: original multi-query approach (unchanged) ─
+  const fetchTeacherStats = async (uid) => {
+    const db = getFirestore();
+
+    const [userSnap, teacherResults] = await Promise.all([
+      getDoc(doc(db, "users", uid)),
+      Promise.all([
+        getDocs(
+          query(collection(db, "classes"), where("teacherID", "==", uid)),
+        ),
+        getDocs(
           query(
             collection(db, "books"),
             where("source", "==", "Teacher"),
             where("uploadedById", "==", uid),
           ),
-        );
-        booksUploaded = booksSnap.size;
-        setUploadedBooks(
-          booksSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-        );
+        ),
+      ]),
+    ]);
 
-        fetchClassAggregates(uid);
+    const userData = userSnap.exists() ? userSnap.data() : {};
+
+    if (userData?.customAvatarUrl !== undefined) {
+      setCustomAvatarUrl(userData.customAvatarUrl ?? null);
+    }
+    if (userData?.character) {
+      setSelectedCharacter(userData.character);
+    }
+
+    const [classesSnap, booksSnap] = teacherResults;
+    const managedClassCount = classesSnap.size;
+    let totalStudents = 0;
+    classesSnap.docs.forEach((d) => {
+      totalStudents += d.data().students?.length ?? 0;
+    });
+    const booksUploaded = booksSnap.size;
+    setUploadedBooks(booksSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+
+    setStats({
+      managedClassCount,
+      totalStudents,
+      booksUploaded,
+    });
+
+    // Kick off class aggregates separately (heavy query)
+    fetchClassAggregates(uid);
+  };
+
+  // ── Router: pick the right fetch based on role ─────────
+  const fetchStats = async () => {
+    try {
+      const uid = currUser?.uid ?? currUser?.id;
+      if (!uid) return;
+
+      if (isTeacher) {
+        await fetchTeacherStats(uid);
+      } else {
+        await fetchStudentStats(uid);
       }
-
-      setStats({
-        booksRead: booksCompleted,
-        // FIX: pass completedBookDocs (books with difficulty field),
-        // not sessionDocs (sessions have no difficulty)
-        readingLevel: getReadingLevel(completedBookDocs),
-        stickersUnlocked,
-        readingTime: formatTime(totalTimeSeconds),
-        managedClassCount,
-        totalStudents,
-        booksUploaded,
-        streak,
-        mostActiveDay,
-        lastActiveDate,
-        daysSinceLastSession,
-        avgSessionDuration: formatDuration(avgSessionDurationSecs),
-        sessionsStarted,
-        sessionsCompleted,
-        engagementRate,
-        abandonedCount: uniqueAbandonedBookIds.length,
-      });
     } catch (error) {
       console.log("Error fetching profile stats:", error);
     } finally {

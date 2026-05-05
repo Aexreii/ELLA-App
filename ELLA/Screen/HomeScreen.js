@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -28,12 +28,134 @@ import {
 } from "firebase/firestore";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// ── Skeleton shimmer component ─────────────────────────────────────────────
+function SkeletonBookCard({ scale, verticalScale }) {
+  const shimmer = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, {
+          toValue: 1,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmer, {
+          toValue: 0,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, []);
+
+  const opacity = shimmer.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.35, 0.7],
+  });
+
+  return (
+    <View
+      style={{ width: scale(110), alignItems: "center", margin: scale(10) }}
+    >
+      <Animated.View
+        style={{
+          width: scale(120),
+          height: verticalScale(160),
+          borderRadius: scale(10),
+          backgroundColor: "#c8d6e5",
+          opacity,
+        }}
+      />
+      <Animated.View
+        style={{
+          width: scale(85),
+          height: verticalScale(10),
+          borderRadius: scale(5),
+          backgroundColor: "#c8d6e5",
+          marginTop: verticalScale(8),
+          opacity,
+        }}
+      />
+      <Animated.View
+        style={{
+          width: scale(60),
+          height: verticalScale(8),
+          borderRadius: scale(4),
+          backgroundColor: "#c8d6e5",
+          marginTop: verticalScale(4),
+          opacity,
+        }}
+      />
+    </View>
+  );
+}
+
+// ── Skeleton for teacher grid card ─────────────────────────────────────────
+function SkeletonTeacherCard({ scale, verticalScale }) {
+  const shimmer = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, {
+          toValue: 1,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmer, {
+          toValue: 0,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, []);
+
+  const opacity = shimmer.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.35, 0.7],
+  });
+
+  return (
+    <View
+      style={{
+        width: "33%",
+        padding: scale(6),
+        alignItems: "center",
+        marginBottom: verticalScale(8),
+      }}
+    >
+      <Animated.View
+        style={{
+          width: "100%",
+          aspectRatio: 0.75,
+          borderRadius: scale(8),
+          backgroundColor: "#c8d6e5",
+          opacity,
+        }}
+      />
+      <Animated.View
+        style={{
+          width: "70%",
+          height: verticalScale(8),
+          borderRadius: scale(4),
+          backgroundColor: "#c8d6e5",
+          marginTop: verticalScale(6),
+          opacity,
+        }}
+      />
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
 
   const [currUser, setCurrUser] = useState(null);
   const [books, setBooks] = useState([]);
+  const [booksLoading, setBooksLoading] = useState(true); // ← new
   const [currRoute, setCurrRoute] = useState(1);
 
   const [enrolledClassId, setEnrolledClassId] = useState(null);
@@ -172,11 +294,14 @@ export default function HomeScreen() {
   useEffect(() => {
     const fetchBooks = async () => {
       try {
+        setBooksLoading(true);
         const db = getFirestore();
         const booksSnapshot = await getDocs(collection(db, "books"));
         setBooks(booksSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (error) {
         console.log("Error fetching books:", error);
+      } finally {
+        setBooksLoading(false); // ← always clear
       }
     };
     fetchBooks();
@@ -191,26 +316,6 @@ export default function HomeScreen() {
 
   const s = getStyles(scale, verticalScale);
 
-  // ── Loading state ──────────────────────────────────────────
-  if (!currUser) {
-    return (
-      <ImageBackground
-        source={require("../assets/backgrounds/page.png")}
-        style={s.background}
-        resizeMode="cover"
-      >
-        <View
-          style={[
-            s.container,
-            { justifyContent: "center", paddingTop: insets.top },
-          ]}
-        >
-          <Text style={s.loadingText}>Loading...</Text>
-        </View>
-      </ImageBackground>
-    );
-  }
-
   // ── Teacher view ───────────────────────────────────────────
   if (isTeacher) {
     return (
@@ -221,20 +326,24 @@ export default function HomeScreen() {
       >
         <View style={s.container}>
           <View style={[s.content, { paddingTop: insets.top }]}>
-            <AppHeader
-              currUser={currUser}
-              characterImages={characterImages}
-              onAvatarPress={handleMenuPress}
-            />
+            {currUser && (
+              <AppHeader
+                currUser={currUser}
+                characterImages={characterImages}
+                onAvatarPress={handleMenuPress}
+              />
+            )}
 
-            <Sidebar
-              isMenuOpen={isMenuOpen}
-              slideAnim={slideAnim}
-              handleMenuPress={handleMenuPress}
-              currUser={currUser}
-              characterImages={characterImages}
-              setIsExitDialogOpen={setIsExitDialogOpen}
-            />
+            {currUser && (
+              <Sidebar
+                isMenuOpen={isMenuOpen}
+                slideAnim={slideAnim}
+                handleMenuPress={handleMenuPress}
+                currUser={currUser}
+                characterImages={characterImages}
+                setIsExitDialogOpen={setIsExitDialogOpen}
+              />
+            )}
 
             <View style={{ height: verticalScale(25) }} />
             <View style={s.readTextContainer}>
@@ -250,7 +359,18 @@ export default function HomeScreen() {
             >
               <Text style={s.catalogTitle}>Materials</Text>
 
-              {teacherOwnBooks.length === 0 ? (
+              {/* Show skeleton while loading */}
+              {booksLoading ? (
+                <View style={s.teacherGrid}>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <SkeletonTeacherCard
+                      key={i}
+                      scale={scale}
+                      verticalScale={verticalScale}
+                    />
+                  ))}
+                </View>
+              ) : teacherOwnBooks.length === 0 ? (
                 <View style={s.emptyMaterials}>
                   <Ionicons
                     name="book-outline"
@@ -357,6 +477,19 @@ export default function HomeScreen() {
     );
   }
 
+  // ── Student view ───────────────────────────────────────────
+
+  // Sections to render (only non-empty ones are shown when loaded)
+  const catalogSections = [
+    { label: "Recommended", data: recommended },
+    ...(isEnrolled && enrolledTeacherBooks.length > 0
+      ? [{ label: "Teacher Materials", data: enrolledTeacherBooks }]
+      : []),
+    { label: "Student Uploads", data: studentBooks },
+    { label: "Books from Ella", data: ellaBooks },
+    { label: "My Uploads", data: myStudentUploads },
+  ];
+
   return (
     <ImageBackground
       source={require("../assets/backgrounds/page.png")}
@@ -365,25 +498,29 @@ export default function HomeScreen() {
     >
       <View style={s.container}>
         <View style={[s.content, { paddingTop: insets.top }]}>
-          <AppHeader
-            currUser={currUser}
-            characterImages={characterImages}
-            onAvatarPress={handleMenuPress}
-          />
+          {currUser && (
+            <AppHeader
+              currUser={currUser}
+              characterImages={characterImages}
+              onAvatarPress={handleMenuPress}
+            />
+          )}
 
           <View style={{ height: verticalScale(25) }} />
           <View style={s.readTextContainer}>
             <Text style={s.readText}>Let's Read!</Text>
           </View>
 
-          <Sidebar
-            isMenuOpen={isMenuOpen}
-            slideAnim={slideAnim}
-            handleMenuPress={handleMenuPress}
-            currUser={{ ...currUser, classEnrolled: enrolledClassId }}
-            characterImages={characterImages}
-            setIsExitDialogOpen={setIsExitDialogOpen}
-          />
+          {currUser && (
+            <Sidebar
+              isMenuOpen={isMenuOpen}
+              slideAnim={slideAnim}
+              handleMenuPress={handleMenuPress}
+              currUser={{ ...currUser, classEnrolled: enrolledClassId }}
+              characterImages={characterImages}
+              setIsExitDialogOpen={setIsExitDialogOpen}
+            />
+          )}
 
           <View style={{ height: verticalScale(65) }} />
 
@@ -405,39 +542,59 @@ export default function HomeScreen() {
             )}
 
             <View style={s.catalog}>
-              {[
-                { label: "Recommended", data: recommended },
-                ...(isEnrolled && enrolledTeacherBooks.length > 0
-                  ? [{ label: "Teacher Materials", data: enrolledTeacherBooks }]
-                  : []),
-                { label: "Student Uploads", data: studentBooks },
-                { label: "Books from Ella", data: ellaBooks },
-                { label: "My Uploads", data: myStudentUploads },
-              ]
-                .filter(({ data }) => data && data.length > 0)
-                .map(({ label, data }) => (
-                  <View key={label}>
-                    <Text style={s.catalogTitle}>{label}</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                    >
-                      {data.map((book) => (
-                        <TouchableOpacity
-                          key={book.id}
-                          style={s.bookCard}
-                          onPress={() => handleOpenBook(book, currUser)}
-                        >
-                          <RNImage
-                            source={{ uri: book.cover }}
-                            style={s.bookImage}
+              {booksLoading || !currUser ? (
+                /* ── Skeleton placeholders ── */
+                <>
+                  {["Recommended", "Books from Ella"].map((label) => (
+                    <View key={label}>
+                      {/* Skeleton title bar */}
+                      <SkeletonTitleBar
+                        scale={scale}
+                        verticalScale={verticalScale}
+                      />
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                      >
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <SkeletonBookCard
+                            key={i}
+                            scale={scale}
+                            verticalScale={verticalScale}
                           />
-                          <Text style={s.bookLabel}>{book.title}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                ))}
+                        ))}
+                      </ScrollView>
+                    </View>
+                  ))}
+                </>
+              ) : (
+                /* ── Real book sections ── */
+                catalogSections
+                  .filter(({ data }) => data && data.length > 0)
+                  .map(({ label, data }) => (
+                    <View key={label}>
+                      <Text style={s.catalogTitle}>{label}</Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                      >
+                        {data.map((book) => (
+                          <TouchableOpacity
+                            key={book.id}
+                            style={s.bookCard}
+                            onPress={() => handleOpenBook(book, currUser)}
+                          >
+                            <RNImage
+                              source={{ uri: book.cover }}
+                              style={s.bookImage}
+                            />
+                            <Text style={s.bookLabel}>{book.title}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  ))
+              )}
             </View>
           </ScrollView>
         </View>
@@ -493,6 +650,47 @@ export default function HomeScreen() {
         />
       </View>
     </ImageBackground>
+  );
+}
+
+// ── Skeleton section title bar ─────────────────────────────────────────────
+function SkeletonTitleBar({ scale, verticalScale }) {
+  const shimmer = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, {
+          toValue: 1,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmer, {
+          toValue: 0,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, []);
+
+  const opacity = shimmer.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.35, 0.7],
+  });
+
+  return (
+    <Animated.View
+      style={{
+        width: scale(120),
+        height: verticalScale(18),
+        borderRadius: scale(6),
+        backgroundColor: "#c8d6e5",
+        marginTop: verticalScale(15),
+        marginBottom: verticalScale(15),
+        opacity,
+      }}
+    />
   );
 }
 

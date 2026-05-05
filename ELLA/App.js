@@ -2,7 +2,7 @@ import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useEffect } from "react";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { MusicProvider } from "./hook/MusicContext";
@@ -39,7 +39,7 @@ export default function App() {
   useEffect(() => {
     if (Platform.OS === "android") {
       NavigationBar.setVisibilityAsync("hidden");
-      NavigationBar.setBehaviorAsync("overlay-swipe"); // reappears on swipe, then hides again
+      NavigationBar.setBehaviorAsync("overlay-swipe");
     }
   }, []);
 
@@ -52,9 +52,6 @@ export default function App() {
 
   const { width, height } = useWindowDimensions();
 
-  // In portrait mode width/height is always well below 1.6, so the old
-  // TABLET_THRESHOLD check never fired. Check physical width instead —
-  // tablets (iPad, large Android) are typically >= 600 dp in portrait.
   const isTablet = width >= 600;
   const containerWidth = isTablet ? Math.min(width, height * (9 / 20)) : width;
   const containerHeight = height;
@@ -73,7 +70,6 @@ export default function App() {
 
   if (!fontsLoaded || loading) return null;
 
-  // Determine where to land based on auth + profile state
   const getInitialRoute = () => {
     if (!user) return "StartUp";
     if (!profile?.role) return "RoleSelect";
@@ -99,37 +95,45 @@ export default function App() {
         >
           <MusicProvider>
             <SafeAreaProvider>
-              <StatusBar
-                translucent
-                backgroundColor="transparent"
-                barStyle="dark-content"
-              />
-              <NavigationContainer>
-                <Stack.Navigator
-                  initialRouteName={getInitialRoute()}
-                  screenOptions={{
-                    headerShown: false,
-                    contentStyle: { backgroundColor: "#FFF" },
-                  }}
-                >
-                  <Stack.Screen name="StartUp" component={StartUp} />
-                  <Stack.Screen name="SignUp" component={SignUp} />
-                  <Stack.Screen name="NameEntry" component={NameEntry} />
-                  <Stack.Screen name="RoleSelect" component={RoleSelect} />
-                  <Stack.Screen name="HomeScreen" component={HomeScreen} />
-                  <Stack.Screen name="UserProfile" component={UserProfile} />
-                  <Stack.Screen name="OpenBook" component={OpenBook} />
-                  <Stack.Screen name="ReadBook" component={ReadBook} />
-                  <Stack.Screen name="Settings" component={Settings} />
-                  <Stack.Screen name="Prizes" component={Prizes} />
-                  <Stack.Screen name="ManageClass" component={ManageClass} />
-                  <Stack.Screen name="TeacherBooks" component={TeacherBooks} />
-                  <Stack.Screen name="UploadBook" component={UploadBook} />
-                  <Stack.Screen name="AvatarSelect" component={AvatarSelect} />
-                  <Stack.Screen name="ContactUs" component={ContactUs} />
-                  <Stack.Screen name="aboutElla" component={aboutElla} />
-                </Stack.Navigator>
-              </NavigationContainer>
+              <SafeAreaView style={{ flex: 1 }} edges={["bottom"]}>
+                <StatusBar
+                  translucent
+                  backgroundColor="transparent"
+                  barStyle="dark-content"
+                />
+                <NavigationContainer>
+                  <Stack.Navigator
+                    initialRouteName={getInitialRoute()}
+                    screenOptions={{
+                      headerShown: false,
+                      contentStyle: { backgroundColor: "#FFF" },
+                    }}
+                  >
+                    <Stack.Screen name="StartUp" component={StartUp} />
+                    <Stack.Screen name="SignUp" component={SignUp} />
+                    <Stack.Screen name="NameEntry" component={NameEntry} />
+                    <Stack.Screen name="RoleSelect" component={RoleSelect} />
+                    <Stack.Screen name="HomeScreen" component={HomeScreen} />
+                    <Stack.Screen name="UserProfile" component={UserProfile} />
+                    <Stack.Screen name="OpenBook" component={OpenBook} />
+                    <Stack.Screen name="ReadBook" component={ReadBook} />
+                    <Stack.Screen name="Settings" component={Settings} />
+                    <Stack.Screen name="Prizes" component={Prizes} />
+                    <Stack.Screen name="ManageClass" component={ManageClass} />
+                    <Stack.Screen
+                      name="TeacherBooks"
+                      component={TeacherBooks}
+                    />
+                    <Stack.Screen name="UploadBook" component={UploadBook} />
+                    <Stack.Screen
+                      name="AvatarSelect"
+                      component={AvatarSelect}
+                    />
+                    <Stack.Screen name="ContactUs" component={ContactUs} />
+                    <Stack.Screen name="aboutElla" component={aboutElla} />
+                  </Stack.Navigator>
+                </NavigationContainer>
+              </SafeAreaView>
             </SafeAreaProvider>
           </MusicProvider>
         </ScaleProvider>

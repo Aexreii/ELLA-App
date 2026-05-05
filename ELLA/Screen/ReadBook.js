@@ -24,6 +24,8 @@ import {
   updateDoc,
   getDoc,
   increment,
+  arrayUnion,
+  arrayRemove,
   serverTimestamp,
   writeBatch,
 } from "firebase/firestore";
@@ -299,6 +301,7 @@ export default function ReadBook({ route, navigation }) {
           });
         }
       } else {
+        // ── First time opening this book ──────────────────────────
         const emptyFlat = flattenWordResults(
           book.contents.map((s) => s.split(" ").map(() => null)),
         );
@@ -313,6 +316,17 @@ export default function ReadBook({ route, navigation }) {
           totalSessions: 0,
           totalTimeSeconds: 0,
         });
+
+        // ── Update userStats: mark as abandoned (in progress) ────
+        updateDoc(doc(db, "userStats", uid), {
+          abandonedBookIds: arrayUnion(book.id),
+          abandonedBooks: arrayUnion({
+            id: book.id,
+            title: book.title,
+            difficulty: book.difficulty ?? "Easy",
+          }),
+          updatedAt: serverTimestamp(),
+        }).catch(() => {});
       }
 
       setProgressLoaded(true);
@@ -393,8 +407,10 @@ export default function ReadBook({ route, navigation }) {
       const progressRef = doc(db, "userProgress", progressId);
       const progressSnap = await getDoc(progressRef);
 
+      const alreadyCompleted =
+        progressSnap.exists() && progressSnap.data().completed === true;
+
       if (progressSnap.exists()) {
-        const alreadyCompleted = progressSnap.data().completed === true;
         batch.update(progressRef, {
           currentSentence: snapshotSentence,
           wordResults: serializedWordResults,
@@ -431,6 +447,37 @@ export default function ReadBook({ route, navigation }) {
       });
 
       await batch.commit();
+
+      // ── Update userStats ──────────────────────────────────────
+      const statsUpdate = {
+        sessionsStarted: increment(1),
+        sessionsCompleted: increment(isCompleted ? 1 : 0),
+        totalTimeSeconds: increment(elapsedSeconds),
+        lastActiveDate: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      // Only count completion once even if user re-reads the book
+      if (isCompleted && !alreadyCompleted) {
+        statsUpdate.booksCompleted = increment(1);
+        statsUpdate.completedBookIds = arrayUnion(book.id);
+        statsUpdate.completedBooks = arrayUnion({
+          id: book.id,
+          title: book.title,
+          difficulty: book.difficulty ?? "Easy",
+        });
+        statsUpdate.abandonedBookIds = arrayRemove(book.id);
+        statsUpdate.abandonedBooks = arrayRemove({
+          id: book.id,
+          title: book.title,
+          difficulty: book.difficulty ?? "Easy",
+        });
+      }
+
+      updateDoc(doc(db, "userStats", uid), statsUpdate).catch((e) =>
+        console.log("userStats update error:", e),
+      );
+      // ─────────────────────────────────────────────────────────
 
       const wordEventPromises = Object.entries(wordTapCountsRef.current).map(
         async ([word, tapCount]) => {
