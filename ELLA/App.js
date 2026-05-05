@@ -6,6 +6,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useEffect } from "react";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { MusicProvider } from "./hook/MusicContext";
+import { ScaleProvider } from "./utils/scaling";
 
 import * as ScreenOrientation from "expo-screen-orientation";
 
@@ -32,12 +33,6 @@ import { useWindowDimensions, View, StyleSheet } from "react-native";
 
 const Stack = createNativeStackNavigator();
 
-// Tablets/iPads typically have aspect ratios below 1.6 (e.g. iPad is ~4:3 = 1.33)
-// Phones are typically 1.78 (16:9) and above.
-// We use the device's own ratio as the target — so phones always fill perfectly,
-// and tablets get pillarboxed to match a phone-like proportions.
-const TABLET_THRESHOLD = 1.6;
-
 export default function App() {
   const { user, profile, loading } = useAuth();
   const fontsLoaded = useAppFonts();
@@ -47,12 +42,12 @@ export default function App() {
   }, []);
 
   const { width, height } = useWindowDimensions();
-  const screenRatio = width / height; // e.g. 0.45 for a tall phone, 0.75 for an iPad
 
-  // If it's a tablet (wide ratio), constrain width to phone-like proportions
-  // Otherwise just fill the screen completely
-  const isTablet = screenRatio > TABLET_THRESHOLD;
-  const containerWidth = isTablet ? height * (9 / 20) : width;
+  // In portrait mode width/height is always well below 1.6, so the old
+  // TABLET_THRESHOLD check never fired. Check physical width instead —
+  // tablets (iPad, large Android) are typically >= 600 dp in portrait.
+  const isTablet = width >= 600;
+  const containerWidth = isTablet ? Math.min(width, height * (9 / 20)) : width;
   const containerHeight = height;
 
   useEffect(() => {
@@ -89,41 +84,46 @@ export default function App() {
           flex: !isTablet ? 1 : undefined,
         }}
       >
-        <MusicProvider>
-          <SafeAreaProvider>
-            <StatusBar
-              translucent
-              backgroundColor="transparent"
-              barStyle="dark-content"
-            />
-            <NavigationContainer>
-              <Stack.Navigator
-                initialRouteName={getInitialRoute()}
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: "#FFF" },
-                }}
-              >
-                <Stack.Screen name="StartUp" component={StartUp} />
-                <Stack.Screen name="SignUp" component={SignUp} />
-                <Stack.Screen name="NameEntry" component={NameEntry} />
-                <Stack.Screen name="RoleSelect" component={RoleSelect} />
-                <Stack.Screen name="HomeScreen" component={HomeScreen} />
-                <Stack.Screen name="UserProfile" component={UserProfile} />
-                <Stack.Screen name="OpenBook" component={OpenBook} />
-                <Stack.Screen name="ReadBook" component={ReadBook} />
-                <Stack.Screen name="Settings" component={Settings} />
-                <Stack.Screen name="Prizes" component={Prizes} />
-                <Stack.Screen name="ManageClass" component={ManageClass} />
-                <Stack.Screen name="TeacherBooks" component={TeacherBooks} />
-                <Stack.Screen name="UploadBook" component={UploadBook} />
-                <Stack.Screen name="AvatarSelect" component={AvatarSelect} />
-                <Stack.Screen name="ContactUs" component={ContactUs} />
-                <Stack.Screen name="aboutElla" component={aboutElla} />
-              </Stack.Navigator>
-            </NavigationContainer>
-          </SafeAreaProvider>
-        </MusicProvider>
+        <ScaleProvider
+          effectiveWidth={containerWidth}
+          effectiveHeight={containerHeight}
+        >
+          <MusicProvider>
+            <SafeAreaProvider>
+              <StatusBar
+                translucent
+                backgroundColor="transparent"
+                barStyle="dark-content"
+              />
+              <NavigationContainer>
+                <Stack.Navigator
+                  initialRouteName={getInitialRoute()}
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: "#FFF" },
+                  }}
+                >
+                  <Stack.Screen name="StartUp" component={StartUp} />
+                  <Stack.Screen name="SignUp" component={SignUp} />
+                  <Stack.Screen name="NameEntry" component={NameEntry} />
+                  <Stack.Screen name="RoleSelect" component={RoleSelect} />
+                  <Stack.Screen name="HomeScreen" component={HomeScreen} />
+                  <Stack.Screen name="UserProfile" component={UserProfile} />
+                  <Stack.Screen name="OpenBook" component={OpenBook} />
+                  <Stack.Screen name="ReadBook" component={ReadBook} />
+                  <Stack.Screen name="Settings" component={Settings} />
+                  <Stack.Screen name="Prizes" component={Prizes} />
+                  <Stack.Screen name="ManageClass" component={ManageClass} />
+                  <Stack.Screen name="TeacherBooks" component={TeacherBooks} />
+                  <Stack.Screen name="UploadBook" component={UploadBook} />
+                  <Stack.Screen name="AvatarSelect" component={AvatarSelect} />
+                  <Stack.Screen name="ContactUs" component={ContactUs} />
+                  <Stack.Screen name="aboutElla" component={aboutElla} />
+                </Stack.Navigator>
+              </NavigationContainer>
+            </SafeAreaProvider>
+          </MusicProvider>
+        </ScaleProvider>
       </View>
     </View>
   );

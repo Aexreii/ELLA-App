@@ -71,8 +71,6 @@ const VOICE_FILES = {
   wrong_4: require("../assets/sounds/11.mp3"),
 };
 
-// In ReadBook.jsx — replace alignWords()
-
 function editDistance(a, b) {
   const dp = Array.from({ length: a.length + 1 }, (_, i) =>
     Array.from({ length: b.length + 1 }, (_, j) =>
@@ -90,7 +88,6 @@ function editDistance(a, b) {
 
 function wordsMatch(spoken, expected) {
   if (spoken === expected) return true;
-  // Allow 1 edit for words 4+ chars, exact for short words to avoid "to"↔"do"
   const threshold = expected.length >= 4 ? 1 : 0;
   return editDistance(spoken, expected) <= threshold;
 }
@@ -105,11 +102,10 @@ function alignWords(expectedWords, spokenWords) {
 
   for (let i = 1; i <= m; i++)
     for (let j = 1; j <= n; j++)
-      dp[i][j] = wordsMatch(exp[i - 1], spk[j - 1]) // ← fuzzy instead of ===
+      dp[i][j] = wordsMatch(exp[i - 1], spk[j - 1])
         ? dp[i - 1][j - 1] + 1
         : Math.max(dp[i - 1][j], dp[i][j - 1]);
 
-  // backtrack (same as before)
   const matched = new Array(m).fill(false);
   let i = m,
     j = n;
@@ -226,6 +222,9 @@ export default function ReadBook({ route, navigation }) {
   const awardedSentencesRef = useRef({});
   const recordingsCountRef = useRef(0);
 
+  // ── Per-word attempt counts for skip button ────────────
+  const wordAttemptCountsRef = useRef({});
+
   const sentenceWords = book.contents[currentSentence].split(" ");
   const currentWordResults = wordResults[currentSentence];
   const allWordsCorrect = currentWordResults.every((r) => r === "correct");
@@ -247,6 +246,17 @@ export default function ReadBook({ route, navigation }) {
       if (avatarHideTimer.current) clearTimeout(avatarHideTimer.current);
     };
   }, []);
+
+  // ── Auto-advance when all words are correct ────────────
+  useEffect(() => {
+    if (!allWordsCorrect || !progressLoaded) return;
+
+    const timer = setTimeout(() => {
+      handleNext();
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [allWordsCorrect, currentSentence]);
 
   const loadProgressAndCreateSession = async () => {
     try {
@@ -333,6 +343,12 @@ export default function ReadBook({ route, navigation }) {
 
   useEffect(() => {
     setActiveWordIndex(0);
+    // Clear attempt counts for the new sentence
+    Object.keys(wordAttemptCountsRef.current).forEach((key) => {
+      if (key.startsWith(`${currentSentence}_`)) {
+        delete wordAttemptCountsRef.current[key];
+      }
+    });
   }, [currentSentence]);
 
   // ─────────────────────────────────────────────────────────
@@ -589,7 +605,7 @@ export default function ReadBook({ route, navigation }) {
     awardedSentencesRef.current[sentenceIndex] = true;
 
     setLocalPoints((p) => p + finalPoints);
-    sessionPointsRef.current += finalPoints; // track session total
+    sessionPointsRef.current += finalPoints;
     triggerPointsPop(finalPoints);
     try {
       const db = getFirestore();
@@ -700,6 +716,20 @@ export default function ReadBook({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────────────────────
+  // 8b. Skip a stubbornly wrong word
+  // ─────────────────────────────────────────────────────────
+  const handleSkipWord = (index) => {
+    const attemptKey = `${currentSentence}_${index}`;
+    delete wordAttemptCountsRef.current[attemptKey];
+
+    setWordResults((prev) => {
+      const next = prev.map((s) => [...s]);
+      next[currentSentence][index] = "correct";
+      return next;
+    });
+  };
+
+  // ─────────────────────────────────────────────────────────
   // 9. Next / Prev
   // ─────────────────────────────────────────────────────────
   const handleNext = async () => {
@@ -713,9 +743,7 @@ export default function ReadBook({ route, navigation }) {
     if (!isLastSentence) {
       setCurrentSentence((prev) => prev + 1);
     } else {
-      // Save first, then show the congratulations screen
       await saveAndExit(true);
-      // Animate the card in
       congratsScaleAnim.setValue(0);
       Animated.spring(congratsScaleAnim, {
         toValue: 1,
@@ -822,6 +850,15 @@ export default function ReadBook({ route, navigation }) {
       const mergedResults = currentResults.map((existing) => {
         if (existing === "correct") return "correct";
         return remainingResults[remainingIndex++] ?? "wrong";
+      });
+
+      // ── Increment attempt counts for each wrong word ──
+      mergedResults.forEach((res, i) => {
+        if (res === "wrong") {
+          const attemptKey = `${currentSentence}_${i}`;
+          wordAttemptCountsRef.current[attemptKey] =
+            (wordAttemptCountsRef.current[attemptKey] ?? 0) + 1;
+        }
       });
 
       setWordResults((prev) => {
@@ -1029,24 +1066,39 @@ export default function ReadBook({ route, navigation }) {
           {sentenceWords.map((word, index) => {
             const result = currentWordResults[index];
             const isPointer = index === activeWordIndex;
+            const attemptKey = `${currentSentence}_${index}`;
+            const attempts = wordAttemptCountsRef.current[attemptKey] ?? 0;
+            const showSkip = result === "wrong" && attempts >= 5;
+
             return (
-              <TouchableOpacity
-                key={index}
-                onPress={() => handleWordPress(index)}
-                activeOpacity={0.75}
-              >
-                <Text
-                  style={[
-                    s.word,
-                    result === "correct" && s.wordCorrect,
-                    result === "wrong" && s.wordWrong,
-                    result === "orange" && s.wordOrange,
-                    isPointer && !result && s.wordPointer,
-                  ]}
+              <View key={index} style={s.wordWrapper}>
+                <TouchableOpacity
+                  onPress={() => handleWordPress(index)}
+                  activeOpacity={0.75}
                 >
-                  {word}{" "}
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      s.word,
+                      result === "correct" && s.wordCorrect,
+                      result === "wrong" && s.wordWrong,
+                      result === "orange" && s.wordOrange,
+                      isPointer && !result && s.wordPointer,
+                    ]}
+                  >
+                    {word}{" "}
+                  </Text>
+                </TouchableOpacity>
+
+                {showSkip && (
+                  <TouchableOpacity
+                    onPress={() => handleSkipWord(index)}
+                    style={s.skipWordButton}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.skipWordText}>Skip</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             );
           })}
         </View>
@@ -1295,6 +1347,11 @@ const getStyles = (scale, verticalScale) =>
       justifyContent: "center",
       padding: scale(5),
     },
+    // ── Wraps each word + its optional skip button ──
+    wordWrapper: {
+      alignItems: "center",
+      marginBottom: verticalScale(4),
+    },
     word: {
       fontSize: scale(20),
       fontFamily: "Poppins",
@@ -1313,6 +1370,19 @@ const getStyles = (scale, verticalScale) =>
       fontSize: scale(11),
       fontFamily: "Poppins",
       color: "#888",
+    },
+    // ── Skip word button ──
+    skipWordButton: {
+      backgroundColor: "#aaa",
+      borderRadius: scale(8),
+      paddingHorizontal: scale(8),
+      paddingVertical: verticalScale(2),
+      marginTop: verticalScale(2),
+    },
+    skipWordText: {
+      fontFamily: "PixelifySans",
+      fontSize: scale(10),
+      color: "#fff",
     },
     controlRow: {
       flexDirection: "row",
