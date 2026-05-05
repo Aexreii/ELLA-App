@@ -7,6 +7,8 @@ import { useEffect } from "react";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { MusicProvider } from "./hook/MusicContext";
 import { ScaleProvider } from "./utils/scaling";
+import * as NavigationBar from "expo-navigation-bar";
+import { Platform } from "react-native";
 
 import * as ScreenOrientation from "expo-screen-orientation";
 
@@ -34,6 +36,13 @@ import { useWindowDimensions, View, StyleSheet } from "react-native";
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      NavigationBar.setVisibilityAsync("hidden");
+      NavigationBar.setBehaviorAsync("overlay-swipe"); // reappears on swipe, then hides again
+    }
+  }, []);
+
   const { user, profile, loading } = useAuth();
   const fontsLoaded = useAppFonts();
 
