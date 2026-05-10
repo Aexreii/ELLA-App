@@ -166,11 +166,17 @@ export default function Prizes() {
   const renderSticker = ({ item }) => {
     const owned = ownedStickers.includes(item.id);
     const stickerCost = item.cost ?? 0;
+    const canAfford = (currUser?.points ?? 0) >= stickerCost;
+
     return (
       <TouchableOpacity
         style={[
           s.stickerCard,
-          owned ? s.stickerCardOwned : s.stickerCardLocked,
+          owned
+            ? s.stickerCardOwned
+            : canAfford
+              ? s.stickerCardAffordable
+              : s.stickerCardLocked,
         ]}
         onPress={() => {
           setSelectedSticker(item);
@@ -183,7 +189,9 @@ export default function Prizes() {
           style={s.stickerImage}
           contentFit="contain"
         />
-        <Text style={[s.stickerName, !owned && s.stickerNameLocked]}>
+        <Text
+          style={[s.stickerName, !owned && !canAfford && s.stickerNameLocked]}
+        >
           {item.name}
         </Text>
         {owned ? (
@@ -191,7 +199,7 @@ export default function Prizes() {
             <Text style={s.ownedBadgeText}>Owned</Text>
           </View>
         ) : (
-          <View style={s.costBadge}>
+          <View style={[s.costBadge, canAfford && s.costBadgeAffordable]}>
             <Image
               source={require("../assets/icons/diamond.png")}
               style={s.costIcon}
@@ -199,7 +207,7 @@ export default function Prizes() {
             <Text style={s.costText}>{stickerCost}</Text>
           </View>
         )}
-        {!owned && <View style={s.lockedOverlay} />}
+        {!owned && !canAfford && <View style={s.lockedOverlay} />}
       </TouchableOpacity>
     );
   };
@@ -212,9 +220,9 @@ export default function Prizes() {
           characterImages={characterImages}
           onAvatarPress={handleMenuPress}
         />
-        <Text style={s.sectionTitle}>Sticker Shop</Text>
+        <Text style={s.sectionTitle}>Prize Shop</Text>
         <Text style={s.sectionSubtitle}>
-          Spend your points on exclusive stickers!
+          Spend your points on exclusive sticker prizes!
         </Text>
 
         {loadingStickers ? (
@@ -379,7 +387,7 @@ const getStyles = (scale, verticalScale) =>
       fontFamily: "Poppins",
       fontSize: scale(13),
       color: "#666",
-      marginBottom: verticalScale(10),
+      marginBottom: verticalScale(50),
     },
     emptyText: {
       fontFamily: "Poppins",
@@ -394,18 +402,22 @@ const getStyles = (scale, verticalScale) =>
       alignItems: "center",
     },
     stickerCard: {
-      width: scale(100),
+      width: scale(110),
       height: verticalScale(130),
       borderRadius: scale(16),
-      margin: scale(8),
+      margin: scale(5),
       alignItems: "center",
       justifyContent: "center",
       borderWidth: 2,
       overflow: "hidden",
-      paddingVertical: verticalScale(8),
+      paddingVertical: verticalScale(5),
     },
-    stickerCardOwned: { backgroundColor: "#fff5ee", borderColor: "#FF9149" },
-    stickerCardLocked: { backgroundColor: "#f5f5f5", borderColor: "#ddd" },
+    stickerCardOwned: { backgroundColor: "#fff", borderColor: "#FF9149" },
+    stickerCardAffordable: {
+      backgroundColor: "#ddd",
+      borderColor: "#ffb98a",
+    }, // light orange
+    stickerCardLocked: { backgroundColor: "#ddd", borderColor: "#ddd" }, // gray
     lockedOverlay: {
       position: "absolute",
       top: 0,
@@ -415,8 +427,8 @@ const getStyles = (scale, verticalScale) =>
       backgroundColor: "rgba(180, 180, 180, 0.55)",
     },
     stickerImage: {
-      width: scale(52),
-      height: scale(52),
+      width: scale(58),
+      height: scale(60),
       marginBottom: verticalScale(4),
     },
     stickerName: {
@@ -444,6 +456,9 @@ const getStyles = (scale, verticalScale) =>
       paddingHorizontal: scale(8),
       paddingVertical: 2,
       marginTop: verticalScale(4),
+    },
+    costBadgeAffordable: {
+      backgroundColor: "#FF9149", // orange = can afford
     },
     ownedBadgeText: {
       color: "#fff",

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -27,32 +27,10 @@ import {
   getDocs,
 } from "firebase/firestore";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import useShimmer from "../hook/useShimmer";
 
-// ── Skeleton shimmer component ─────────────────────────────────────────────
 function SkeletonBookCard({ scale, verticalScale }) {
-  const shimmer = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmer, {
-          toValue: 1,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shimmer, {
-          toValue: 0,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, []);
-
-  const opacity = shimmer.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.35, 0.7],
-  });
+  const opacity = useShimmer();
 
   return (
     <View
@@ -77,45 +55,12 @@ function SkeletonBookCard({ scale, verticalScale }) {
           opacity,
         }}
       />
-      <Animated.View
-        style={{
-          width: scale(60),
-          height: verticalScale(8),
-          borderRadius: scale(4),
-          backgroundColor: "#c8d6e5",
-          marginTop: verticalScale(4),
-          opacity,
-        }}
-      />
     </View>
   );
 }
 
-// ── Skeleton for teacher grid card ─────────────────────────────────────────
 function SkeletonTeacherCard({ scale, verticalScale }) {
-  const shimmer = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmer, {
-          toValue: 1,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shimmer, {
-          toValue: 0,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, []);
-
-  const opacity = shimmer.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.35, 0.7],
-  });
+  const opacity = useShimmer(); // ← replaces the useRef/useEffect/interpolate block
 
   return (
     <View
@@ -149,6 +94,24 @@ function SkeletonTeacherCard({ scale, verticalScale }) {
   );
 }
 
+function SkeletonTitleBar({ scale, verticalScale }) {
+  const opacity = useShimmer(); // ← same
+
+  return (
+    <Animated.View
+      style={{
+        width: scale(120),
+        height: verticalScale(18),
+        borderRadius: scale(6),
+        backgroundColor: "#c8d6e5",
+        marginTop: verticalScale(15),
+        marginBottom: verticalScale(15),
+        opacity,
+      }}
+    />
+  );
+}
+
 export default function HomeScreen() {
   const { scale, verticalScale } = useScale();
   const insets = useSafeAreaInsets();
@@ -162,9 +125,9 @@ export default function HomeScreen() {
   const [classTeacherId, setClassTeacherId] = useState(null);
 
   const navigation = useNavigation();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
-  const slideAnim = useState(new Animated.Value(-290))[0];
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const slideAnim = useRef(new Animated.Value(-290)).current;
 
   const characterImages = {
     pink: require("../assets/animations/jump_pink.gif"),
@@ -187,14 +150,25 @@ export default function HomeScreen() {
   );
 
   // Student view: books from libUtil
-  const { recommended, teacherMaterials, studentUploads, appBooks } = currUser
-    ? getRecommendedBooks(currUser, books)
-    : {
-        recommended: [],
-        teacherMaterials: [],
-        studentUploads: [],
-        appBooks: [],
-      };
+  const {
+    recommended,
+    teacherMaterials,
+    studentUploads,
+    appBooks,
+    publicBooks,
+  } = useMemo(
+    () =>
+      currUser
+        ? getRecommendedBooks(currUser, books)
+        : {
+            recommended: [],
+            teacherMaterials: [],
+            studentUploads: [],
+            appBooks: [],
+            publicBooks: [],
+          },
+    [currUser, books],
+  );
 
   const myStudentUploads = studentUploads.filter(
     (b) => b.uploadedById === currUser?.uid,
@@ -233,19 +207,6 @@ export default function HomeScreen() {
     }
   };
 
-  // ── Back button ────────────────────────────────────────────
-  useEffect(() => {
-    const backAction = () => {
-      setIsExitDialogOpen(true);
-      return true;
-    };
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      backAction,
-    );
-    return () => backHandler.remove();
-  }, []);
-
   // ── Re-fetch user every time screen is focused ──
   useFocusEffect(
     React.useCallback(() => {
@@ -254,9 +215,7 @@ export default function HomeScreen() {
     }, []),
   );
 
-  // ── Fetch user + class info ────────────────────────────────
-  // ── FIX: mirrors ManageClass.js logic — fetch class doc by ID from
-  // classEnrolled field, then read teacherId from the class doc ──
+  // Define both as regular async functions at component level:
   const fetchUserData = async () => {
     try {
       const user = auth.currentUser;
@@ -264,20 +223,15 @@ export default function HomeScreen() {
       const db = getFirestore();
       const docSnap = await getDoc(doc(db, "users", user.uid));
       if (!docSnap.exists()) return;
-
       const data = docSnap.data();
       setCurrUser({ uid: user.uid, ...data });
-
       const classId = data.classEnrolled ?? null;
       setEnrolledClassId(classId);
-
       if (classId) {
         const classSnap = await getDoc(doc(db, "classes", classId));
-        if (classSnap.exists()) {
-          setClassTeacherId(classSnap.data().teacherID ?? null);
-        } else {
-          setClassTeacherId(null);
-        }
+        setClassTeacherId(
+          classSnap.exists() ? (classSnap.data().teacherID ?? null) : null,
+        );
       } else {
         setClassTeacherId(null);
       }
@@ -286,26 +240,39 @@ export default function HomeScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchUserData();
-  }, []);
+  const fetchBooks = async () => {
+    try {
+      setBooksLoading(true);
+      const db = getFirestore();
+      const snap = await getDocs(collection(db, "books"));
+      setBooks(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (error) {
+      console.log("Error fetching books:", error);
+    } finally {
+      setBooksLoading(false);
+    }
+  };
 
-  // ── Fetch books ────────────────────────────────────────────
-  useEffect(() => {
-    const fetchBooks = async () => {
-      try {
-        setBooksLoading(true);
-        const db = getFirestore();
-        const booksSnapshot = await getDocs(collection(db, "books"));
-        setBooks(booksSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (error) {
-        console.log("Error fetching books:", error);
-      } finally {
-        setBooksLoading(false); // ← always clear
-      }
-    };
-    fetchBooks();
-  }, []);
+  // Handles data refresh every time screen comes into focus
+  // Also fixes re-render after upload and after enrollment
+  useFocusEffect(
+    React.useCallback(() => {
+      setCurrRoute(1);
+      fetchUserData();
+      fetchBooks();
+    }, []),
+  );
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const backAction = () => {
+        setIsExitDialogOpen(true);
+        return true;
+      };
+      const sub = BackHandler.addEventListener("hardwareBackPress", backAction);
+      return () => sub.remove();
+    }, []),
+  );
 
   const handleOpenBook = (book, user) =>
     navigation.navigate("OpenBook", { book, currUser: user });
@@ -479,15 +446,15 @@ export default function HomeScreen() {
 
   // ── Student view ───────────────────────────────────────────
 
-  // Sections to render (only non-empty ones are shown when loaded)
   const catalogSections = [
     { label: "Recommended", data: recommended },
     ...(isEnrolled && enrolledTeacherBooks.length > 0
-      ? [{ label: "Teacher Materials", data: enrolledTeacherBooks }]
+      ? [{ label: "Teacher Books", data: enrolledTeacherBooks }]
       : []),
-    { label: "Student Uploads", data: studentBooks },
+    { label: "Student Books", data: studentBooks },
     { label: "Books from Ella", data: ellaBooks },
-    { label: "My Uploads", data: myStudentUploads },
+    { label: "My Books", data: myStudentUploads },
+    { label: "Public Books", data: publicBooks },
   ];
 
   return (
@@ -650,47 +617,6 @@ export default function HomeScreen() {
         />
       </View>
     </ImageBackground>
-  );
-}
-
-// ── Skeleton section title bar ─────────────────────────────────────────────
-function SkeletonTitleBar({ scale, verticalScale }) {
-  const shimmer = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmer, {
-          toValue: 1,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shimmer, {
-          toValue: 0,
-          duration: 750,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, []);
-
-  const opacity = shimmer.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.35, 0.7],
-  });
-
-  return (
-    <Animated.View
-      style={{
-        width: scale(120),
-        height: verticalScale(18),
-        borderRadius: scale(6),
-        backgroundColor: "#c8d6e5",
-        marginTop: verticalScale(15),
-        marginBottom: verticalScale(15),
-        opacity,
-      }}
-    />
   );
 }
 

@@ -10,20 +10,17 @@ import {
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import { auth } from "../firebase";
-import {
-  signInWithCredential,
-  GoogleAuthProvider,
-  createUserWithEmailAndPassword,
-} from "firebase/auth";
-import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 import { useScale } from "../utils/scaling";
 import {
-  GoogleSignin,
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
 import EllAlert, { useEllAlert } from "../components/Alerts";
+import {
+  signInWithGoogle,
+  signUpWithEmail,
+  navigateAfterAuth,
+} from "../services/authService";
 
 export default function SignUp() {
   const navigation = useNavigation();
@@ -33,118 +30,63 @@ export default function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const isSubmitting = emailLoading || googleLoading;
 
   const handleEmailSignUp = async () => {
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       showAlert({
         type: "warning",
-        title: "Error",
-        message: "Please enter email and password",
+        title: "Missing details",
+        message: "Please enter email and password.",
       });
       return;
     }
     if (password.length < 6) {
       showAlert({
         type: "warning",
-        title: "Error",
-        message: "Password must be at least 6 characters",
+        title: "Weak password",
+        message: "Password must be at least 6 characters.",
       });
       return;
     }
     try {
-      setLoading(true);
-      const { user } = await createUserWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password,
-      );
-      const db = getFirestore();
-      await setDoc(doc(db, "users", user.uid), {
-        name: null,
-        age: null,
-        role: null,
-        points: 0,
-        character: null,
-        email: user.email,
-        progress: [],
-        ownedStickers: [],
-        createdAt: new Date(),
-        id: user.uid,
-        provider: "email",
-        classEnrolled: null,
-      });
-      showAlert({
-        type: "success",
-        title: "Success",
-        message: "Account created successfully!",
-      });
-      navigation.replace("RoleSelect");
+      setEmailLoading(true);
+      const userData = await signUpWithEmail(email, password);
+      navigateAfterAuth(userData, navigation);
     } catch (error) {
-      if (error.code === "auth/email-already-in-use")
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "Email is already in use",
-        });
-      else if (error.code === "auth/invalid-email")
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "Invalid email address",
-        });
-      else if (error.code === "auth/weak-password")
-        showAlert({
-          type: "error",
-          title: "Error",
-          message: "Password is too weak",
-        });
-      else showAlert({ type: "error", title: "Error", message: error.message });
+      const messages = {
+        "auth/email-already-in-use": [
+          "Already registered",
+          "An account with this email already exists. Try signing in.",
+        ],
+        "auth/invalid-email": [
+          "Invalid email",
+          "That doesn't look like a valid email address.",
+        ],
+        "auth/weak-password": [
+          "Weak password",
+          "Please choose a stronger password.",
+        ],
+      };
+      const [title, message] = messages[error.code] ?? [
+        "Sign up failed",
+        error.message,
+      ];
+      showAlert({ type: "error", title, message });
     } finally {
-      setLoading(false);
+      setEmailLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
     try {
-      setIsSubmitting(true);
-      await GoogleSignin.hasPlayServices({
-        showPlayServicesUpdateDialog: true,
-      });
-      await GoogleSignin.signOut().catch(() => {});
-      await GoogleSignin.signIn();
-      const { idToken } = await GoogleSignin.getTokens();
-      if (!idToken) throw new Error("No ID token returned from Google");
-
-      const credential = GoogleAuthProvider.credential(idToken);
-      const { user } = await signInWithCredential(auth, credential);
-
-      const db = getFirestore();
-      const userRef = doc(db, "users", user.uid);
-      const snap = await getDoc(userRef);
-      if (!snap.exists()) {
-        await setDoc(userRef, {
-          name: null,
-          age: null,
-          role: null,
-          points: 0,
-          character: null,
-          email: user.email,
-          progress: [],
-          ownedStickers: [],
-          createdAt: new Date(),
-          provider: "google",
-          id: user.uid,
-          classEnrolled: null,
-        });
-      }
-      const userData = (await getDoc(userRef)).data();
-      if (!userData.role) navigation.replace("RoleSelect");
-      else if (!userData.name || !userData.age) navigation.replace("NameEntry");
-      else navigation.replace("HomeScreen");
+      setGoogleLoading(true);
+      const userData = await signInWithGoogle();
+      navigateAfterAuth(userData, navigation);
     } catch (error) {
-      console.log("Google Sign-up error:", error);
       if (isErrorWithCode(error)) {
         switch (error.code) {
           case statusCodes.SIGN_IN_CANCELLED:
@@ -152,33 +94,33 @@ export default function SignUp() {
           case statusCodes.IN_PROGRESS:
             showAlert({
               type: "info",
-              title: "In Progress",
-              message: "Already signing in, please wait.",
+              title: "Already signing in",
+              message: "Please wait.",
             });
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
             showAlert({
               type: "error",
-              title: "Unavailable",
-              message: "Google Play Services not available.",
+              title: "Google unavailable",
+              message: "Google Play Services isn't available on this device.",
             });
             break;
           default:
             showAlert({
               type: "error",
-              title: "Sign-up Error",
-              message: error.message,
+              title: "Sign up failed",
+              message: "Something went wrong. Please try again.",
             });
         }
       } else {
         showAlert({
           type: "error",
-          title: "Sign-up Error",
-          message: error.message ?? "Something went wrong",
+          title: "Sign up failed",
+          message: "Something went wrong. Please try again.",
         });
       }
     } finally {
-      setIsSubmitting(false);
+      setGoogleLoading(false);
     }
   };
 
@@ -204,6 +146,7 @@ export default function SignUp() {
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
+          editable={!isSubmitting}
         />
       </View>
 
@@ -215,6 +158,7 @@ export default function SignUp() {
           secureTextEntry={!showPassword}
           value={password}
           onChangeText={setPassword}
+          editable={!isSubmitting}
         />
         <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
           <Ionicons
@@ -225,12 +169,13 @@ export default function SignUp() {
         </TouchableOpacity>
       </View>
 
+      {/* Email sign-up button */}
       <TouchableOpacity
-        style={[s.buttonEmail, loading && { opacity: 0.7 }]}
+        style={[s.buttonEmail, isSubmitting && { opacity: 0.7 }]}
         onPress={handleEmailSignUp}
-        disabled={loading}
+        disabled={isSubmitting}
       >
-        {loading ? (
+        {emailLoading ? (
           <ActivityIndicator color="#fff" />
         ) : (
           <>
@@ -240,16 +185,25 @@ export default function SignUp() {
         )}
       </TouchableOpacity>
 
+      {/* Google sign-up button */}
       <TouchableOpacity
         style={[s.buttonGoogle, isSubmitting && { opacity: 0.7 }]}
         onPress={handleGoogleSignIn}
         disabled={isSubmitting}
       >
-        <Image
-          style={s.iconGoogle}
-          source={require("../assets/icons/google.png")}
-        />
-        <Text style={[s.buttonText, s.googleText]}>Sign Up with Google</Text>
+        {googleLoading ? (
+          <ActivityIndicator color="#000" />
+        ) : (
+          <>
+            <Image
+              style={s.iconGoogle}
+              source={require("../assets/icons/google.png")}
+            />
+            <Text style={[s.buttonText, s.googleText]}>
+              Sign Up with Google
+            </Text>
+          </>
+        )}
       </TouchableOpacity>
 
       <Image

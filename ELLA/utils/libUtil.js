@@ -9,23 +9,20 @@ function sortByBookIdDesc(books) {
 }
 
 export function getRecommendedBooks(user, books = []) {
-  if (!user) {
+  if (!user)
     return {
       recommended: [],
       teacherMaterials: [],
       studentUploads: [],
       appBooks: [],
+      publicBooks: [],
     };
-  }
 
-  // If a local progress array exists on the user object use it, else treat as empty
   const completedBookIds = (user.progress ?? []).map((p) => p.bookId);
-
   let maxDifficulty = "Beginner";
   if (user.points >= 400) maxDifficulty = "Advanced";
   else if (user.points >= 200) maxDifficulty = "Intermediate";
 
-  // All books are eligible for recommended (including app/Ella books)
   const recommended = sortByBookIdDesc(
     books
       .filter((b) => !completedBookIds.includes(b.id))
@@ -34,19 +31,31 @@ export function getRecommendedBooks(user, books = []) {
       ),
   ).slice(0, 5);
 
-  // Match both "Teacher" and "teacher" in case of inconsistent casing
   const teacherMaterials = sortByBookIdDesc(
-    books.filter((b) => b.source === "Teacher" || b.source === "teacher"),
+    books.filter(
+      (b) =>
+        (b.source === "Teacher" || b.source === "teacher") &&
+        (b.visibility === "class" || (b.visibility ?? "public") === "public"),
+    ),
   );
 
   const studentUploads = sortByBookIdDesc(
     books.filter(
       (b) =>
-        b.source === "user" || b.source === "User" || b.source === "student",
+        (b.source === "user" ||
+          b.source === "User" ||
+          b.source === "student") &&
+        ((b.visibility ?? "public") !== "private" ||
+          b.uploadedById === user.uid),
     ),
   );
 
-  // Match "app", "App", "ella", "Ella"
+  const publicBooks = sortByBookIdDesc(
+    books.filter(
+      (b) =>
+        (b.visibility ?? "public") === "public" && b.uploadedById !== user.uid,
+    ),
+  );
   const appBooks = sortByBookIdDesc(
     books.filter(
       (b) =>
@@ -57,7 +66,13 @@ export function getRecommendedBooks(user, books = []) {
     ),
   );
 
-  return { recommended, teacherMaterials, studentUploads, appBooks };
+  return {
+    recommended,
+    teacherMaterials,
+    studentUploads,
+    appBooks,
+    publicBooks,
+  };
 }
 
 export function getLastUnfinishedBook(user, books = []) {

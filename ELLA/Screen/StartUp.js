@@ -10,22 +10,19 @@ import {
 import { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import useAppFonts from "../hook/useAppFonts";
 import { useScale } from "../utils/scaling";
-import { auth } from "../firebase";
+
 import {
-  signInWithEmailAndPassword,
-  signInWithCredential,
-  GoogleAuthProvider,
-  sendPasswordResetEmail,
-} from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
-import {
-  GoogleSignin,
   isErrorWithCode,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
 import EllAlert, { useEllAlert } from "../components/Alerts";
+import {
+  signInWithGoogle,
+  signInWithEmail,
+  resetPassword,
+  navigateAfterAuth,
+} from "../services/authService";
 
 export default function StartUp({ navigation }) {
   const { scale, verticalScale } = useScale();
@@ -35,14 +32,11 @@ export default function StartUp({ navigation }) {
   const [showName, setShowName] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const isSubmitting = emailLoading || googleLoading;
 
-  const fontsLoaded = useAppFonts();
-  if (!fontsLoaded) return null;
-
-  // ── Forgot password ────────────────────────────────────────
   const handleForgotPass = async () => {
     if (!email) {
       showAlert({
@@ -54,40 +48,34 @@ export default function StartUp({ navigation }) {
       return;
     }
     try {
-      setIsSubmitting(true);
-      await sendPasswordResetEmail(auth, email.trim());
+      setEmailLoading(true);
+      await resetPassword(email);
       showAlert({
         type: "success",
         title: "Check your inbox!",
         message: "We've sent password reset instructions to your email.",
       });
     } catch (error) {
-      if (error.code === "auth/user-not-found") {
-        showAlert({
-          type: "error",
-          title: "Account not found",
-          message: "We couldn't find an account with that email address.",
-        });
-      } else if (error.code === "auth/invalid-email") {
-        showAlert({
-          type: "error",
-          title: "Invalid email",
-          message:
-            "That doesn't look like a valid email address. Please check and try again.",
-        });
-      } else {
-        showAlert({
-          type: "error",
-          title: "Something went wrong",
-          message: error.message,
-        });
-      }
+      const messages = {
+        "auth/user-not-found": [
+          "Account not found",
+          "We couldn't find an account with that email address.",
+        ],
+        "auth/invalid-email": [
+          "Invalid email",
+          "That doesn't look like a valid email address.",
+        ],
+      };
+      const [title, message] = messages[error.code] ?? [
+        "Something went wrong",
+        "Please try again.",
+      ];
+      showAlert({ type: "error", title, message });
     } finally {
-      setIsSubmitting(false);
+      setEmailLoading(false);
     }
   };
 
-  // ── Email sign-in ──────────────────────────────────────────
   const handleEmailSignIn = async () => {
     if (!showEmailForm) {
       setShowName(false);
@@ -104,136 +92,58 @@ export default function StartUp({ navigation }) {
     }
     try {
       setEmailLoading(true);
-      setIsSubmitting(true);
-      const { user } = await signInWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password,
-      );
-      const db = getFirestore();
-      const userRef = doc(db, "users", user.uid);
-      const snap = await getDoc(userRef);
-      if (!snap.exists()) {
-        await setDoc(userRef, {
-          name: null,
-          age: null,
-          role: null,
-          points: 0,
-          character: null,
-          email: user.email,
-          progress: [],
-          ownedStickers: [],
-          createdAt: new Date(),
-          provider: "email",
-          id: user.uid,
-        });
-      }
-      const userData = (await getDoc(userRef)).data();
-      if (!userData.role) navigation.replace("RoleSelect");
-      else if (!userData.name || !userData.age) navigation.replace("NameEntry");
-      else if (!userData.character) navigation.replace("AvatarSelect");
-      else navigation.replace("HomeScreen");
+      const userData = await signInWithEmail(email, password);
+      navigateAfterAuth(userData, navigation);
     } catch (error) {
-      switch (error.code) {
-        case "auth/user-not-found":
-          showAlert({
-            type: "error",
-            title: "Account not found",
-            message:
-              "We couldn't find an account with that email. Did you sign up yet?",
-          });
-          break;
-        case "auth/wrong-password":
-          showAlert({
-            type: "error",
-            title: "Wrong password",
-            message:
-              "That password doesn't match. Try again or use Forgot Password.",
-          });
-          break;
-        case "auth/invalid-email":
-          showAlert({
-            type: "error",
-            title: "Invalid email",
-            message: "That doesn't look like a valid email address.",
-          });
-          break;
-        case "auth/too-many-requests":
-          showAlert({
-            type: "warning",
-            title: "Too many attempts",
-            message:
-              "Your account is temporarily locked. Reset your password or try again later.",
-          });
-          break;
-        case "auth/invalid-credential":
-          showAlert({
-            type: "error",
-            title: "Incorrect details",
-            message:
-              "Your email or password is incorrect. Please check and try again.",
-          });
-          break;
-        default:
-          showAlert({
-            type: "error",
-            title: "Sign in failed",
-            message: error.message,
-          });
-      }
+      const messages = {
+        "auth/user-not-found": [
+          "Account not found",
+          "We couldn't find an account with that email. Did you sign up yet?",
+        ],
+        "auth/wrong-password": [
+          "Wrong password",
+          "That password doesn't match. Try again or use Forgot Password.",
+        ],
+        "auth/invalid-email": [
+          "Invalid email",
+          "That doesn't look like a valid email address.",
+        ],
+        "auth/too-many-requests": [
+          "Too many attempts",
+          "Your account is temporarily locked. Reset your password or try again later.",
+        ],
+        "auth/invalid-credential": [
+          "Incorrect details",
+          "Your email or password is incorrect. Please check and try again.",
+        ],
+      };
+      const [title, message] = messages[error.code] ?? [
+        "Sign in failed",
+        error.message,
+      ];
+      const type =
+        error.code === "auth/too-many-requests" ? "warning" : "error";
+      showAlert({ type, title, message });
     } finally {
       setEmailLoading(false);
-      setIsSubmitting(false);
     }
   };
 
-  // ── Google sign-in ─────────────────────────────────────────
   const handleGoogleSignIn = async () => {
     try {
-      setIsSubmitting(true);
-      await GoogleSignin.hasPlayServices({
-        showPlayServicesUpdateDialog: true,
-      });
-      await GoogleSignin.signOut().catch(() => {});
-      await GoogleSignin.signIn();
-      const { idToken } = await GoogleSignin.getTokens();
-      if (!idToken) throw new Error("No ID token returned from Google");
-
-      const credential = GoogleAuthProvider.credential(idToken);
-      const { user } = await signInWithCredential(auth, credential);
-
-      const db = getFirestore();
-      const userRef = doc(db, "users", user.uid);
-      const snap = await getDoc(userRef);
-      if (!snap.exists()) {
-        await setDoc(userRef, {
-          name: null,
-          age: null,
-          role: null,
-          points: 0,
-          character: null,
-          email: user.email,
-          classEnrolled: null,
-          createdAt: new Date(),
-          provider: "google",
-        });
-      }
-      const userData = (await getDoc(userRef)).data();
-      if (!userData.role) navigation.replace("RoleSelect");
-      else if (!userData.name || !userData.age) navigation.replace("NameEntry");
-      else if (!userData.character) navigation.replace("AvatarSelect");
-      else navigation.replace("HomeScreen");
+      setGoogleLoading(true);
+      const userData = await signInWithGoogle();
+      navigateAfterAuth(userData, navigation);
     } catch (error) {
-      console.log("Google Sign-in error:", error);
       if (isErrorWithCode(error)) {
         switch (error.code) {
           case statusCodes.SIGN_IN_CANCELLED:
-            break; // user dismissed — no alert needed
+            break;
           case statusCodes.IN_PROGRESS:
             showAlert({
               type: "info",
               title: "Already signing in",
-              message: "Please wait while we finish signing you in.",
+              message: "Please wait.",
             });
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
@@ -258,7 +168,7 @@ export default function StartUp({ navigation }) {
         });
       }
     } finally {
-      setIsSubmitting(false);
+      setGoogleLoading(false);
     }
   };
 
@@ -330,11 +240,17 @@ export default function StartUp({ navigation }) {
         onPress={handleGoogleSignIn}
         disabled={isSubmitting}
       >
-        <Image
-          style={s.iconGoogle}
-          source={require("../assets/icons/google.png")}
-        />
-        <Text style={[s.buttonText, s.google]}>Sign in with Google</Text>
+        {googleLoading ? (
+          <ActivityIndicator color="#000" />
+        ) : (
+          <>
+            <Image
+              style={s.iconGoogle}
+              source={require("../assets/icons/google.png")}
+            />
+            <Text style={[s.buttonText, s.google]}>Sign in with Google</Text>
+          </>
+        )}
       </TouchableOpacity>
 
       <View style={s.signUp}>

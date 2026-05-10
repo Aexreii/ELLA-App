@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -71,6 +73,7 @@ export default function UploadBook() {
   const [uploading, setUploading] = useState(false);
   const [showDifficultyModal, setShowDifficultyModal] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [visibility, setVisibility] = useState("private");
 
   const s = getStyles(scale, verticalScale);
 
@@ -207,6 +210,7 @@ export default function UploadBook() {
         cover: coverUrl,
         source: bookSource,
         uploadedById: uid,
+        visibility,
       });
 
       const classesRef = collection(db, "classes");
@@ -251,126 +255,213 @@ export default function UploadBook() {
         <View style={{ width: scale(40) }} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={s.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={insets.top + verticalScale(56)}
       >
-        <Text style={s.pageTitle}>Upload Book</Text>
-        <Text style={s.pageSubtitle}>Please fill up the fields below</Text>
-
-        <TouchableOpacity
-          style={s.coverPicker}
-          onPress={() => setShowImageModal(true)}
-          activeOpacity={0.8}
+        <ScrollView
+          contentContainerStyle={s.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {coverUri ? (
-            <Image source={{ uri: coverUri }} style={s.coverPreview} />
-          ) : (
-            <View style={s.coverPlaceholder}>
-              <Ionicons name="image-outline" size={scale(40)} color="#aaa" />
-              <Text style={s.coverPlaceholderText}>Tap to upload cover</Text>
+          <Text style={s.pageTitle}>Upload Book</Text>
+          <Text style={s.pageSubtitle}>Please fill up the fields below</Text>
+
+          <TouchableOpacity
+            style={s.coverPicker}
+            onPress={() => setShowImageModal(true)}
+            activeOpacity={0.8}
+          >
+            {coverUri ? (
+              <Image source={{ uri: coverUri }} style={s.coverPreview} />
+            ) : (
+              <View style={s.coverPlaceholder}>
+                <Ionicons name="image-outline" size={scale(40)} color="#aaa" />
+                <Text style={s.coverPlaceholderText}>Tap to upload cover</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {coverUri && (
+            <TouchableOpacity
+              onPress={() => setShowImageModal(true)}
+              style={s.changeCoverBtn}
+            >
+              <Text style={s.changeCoverText}>Change Cover</Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={s.fieldGroup}>
+            <Text style={s.label}>Book Title</Text>
+            <TextInput
+              style={s.input}
+              placeholder="e.g. The Little Star"
+              placeholderTextColor="#bbb"
+              value={title}
+              onChangeText={setTitle}
+            />
+          </View>
+          <View style={s.fieldGroup}>
+            <Text style={s.label}>Writer Name</Text>
+            <TextInput
+              style={s.input}
+              placeholder="e.g. Maria Santos"
+              placeholderTextColor="#bbb"
+              value={writer}
+              onChangeText={setWriter}
+            />
+          </View>
+          <View style={s.fieldGroup}>
+            <Text style={s.label}>Published By</Text>
+            <TextInput
+              style={s.input}
+              placeholder="e.g. Adarna House"
+              placeholderTextColor="#bbb"
+              value={publisher}
+              onChangeText={setPublisher}
+            />
+          </View>
+
+          <View style={s.fieldGroup}>
+            <Text style={s.label}>Book Difficulty</Text>
+            <TouchableOpacity
+              style={s.difficultyBtn}
+              onPress={() => setShowDifficultyModal(true)}
+            >
+              <Text style={s.difficultyBtnText}>{difficulty}</Text>
+              <Ionicons name="chevron-down" size={scale(16)} color="#555" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={s.fieldGroup}>
+            <Text style={s.label}>Book Contents</Text>
+            <Text style={s.labelHint}>
+              Sentences will be split by period (.), question mark (?), or
+              exclamation point (!)
+            </Text>
+            <TextInput
+              style={s.textArea}
+              placeholder="Write the book contents here. Each sentence ends with a period, question mark, or exclamation point."
+              placeholderTextColor="#bbb"
+              value={contentsText}
+              onChangeText={setContentsText}
+              multiline
+              textAlignVertical="top"
+            />
+            {contentsText.trim().length > 0 && (
+              <Text style={s.sentenceCount}>
+                {splitSentences(contentsText).length} sentence
+                {splitSentences(contentsText).length !== 1 ? "s" : ""} detected
+              </Text>
+            )}
+          </View>
+
+          {/* ── Visibility ── */}
+          {!isTeacher && (
+            <View style={s.visibilityRow}>
+              <Text style={s.visibilityLabel}>Book visibility</Text>
+              <View style={s.visibilityOptions}>
+                {["private", "public"].map((opt) => (
+                  <TouchableOpacity
+                    key={opt}
+                    style={[s.visOpt, visibility === opt && s.visOptActive]}
+                    onPress={() => setVisibility(opt)}
+                  >
+                    <Ionicons
+                      name={
+                        opt === "private"
+                          ? "lock-closed-outline"
+                          : "earth-outline"
+                      }
+                      size={scale(14)}
+                      color={visibility === opt ? "#fff" : "#888"}
+                    />
+                    <Text
+                      style={[
+                        s.visOptText,
+                        visibility === opt && s.visOptTextActive,
+                      ]}
+                    >
+                      {opt === "private" ? "Only me" : "Public"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           )}
-        </TouchableOpacity>
-
-        {coverUri && (
-          <TouchableOpacity
-            onPress={() => setShowImageModal(true)}
-            style={s.changeCoverBtn}
-          >
-            <Text style={s.changeCoverText}>Change Cover</Text>
-          </TouchableOpacity>
-        )}
-
-        <View style={s.fieldGroup}>
-          <Text style={s.label}>Book Title</Text>
-          <TextInput
-            style={s.input}
-            placeholder="e.g. The Little Star"
-            placeholderTextColor="#bbb"
-            value={title}
-            onChangeText={setTitle}
-          />
-        </View>
-        <View style={s.fieldGroup}>
-          <Text style={s.label}>Writer Name</Text>
-          <TextInput
-            style={s.input}
-            placeholder="e.g. Maria Santos"
-            placeholderTextColor="#bbb"
-            value={writer}
-            onChangeText={setWriter}
-          />
-        </View>
-        <View style={s.fieldGroup}>
-          <Text style={s.label}>Published By</Text>
-          <TextInput
-            style={s.input}
-            placeholder="e.g. Adarna House"
-            placeholderTextColor="#bbb"
-            value={publisher}
-            onChangeText={setPublisher}
-          />
-        </View>
-
-        <View style={s.fieldGroup}>
-          <Text style={s.label}>Book Difficulty</Text>
-          <TouchableOpacity
-            style={s.difficultyBtn}
-            onPress={() => setShowDifficultyModal(true)}
-          >
-            <Text style={s.difficultyBtnText}>{difficulty}</Text>
-            <Ionicons name="chevron-down" size={scale(16)} color="#555" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={s.fieldGroup}>
-          <Text style={s.label}>Book Contents</Text>
-          <Text style={s.labelHint}>
-            Sentences will be split by period (.), question mark (?), or
-            exclamation point (!)
-          </Text>
-          <TextInput
-            style={s.textArea}
-            placeholder="Write the book contents here. Each sentence ends with a period, question mark, or exclamation point."
-            placeholderTextColor="#bbb"
-            value={contentsText}
-            onChangeText={setContentsText}
-            multiline
-            textAlignVertical="top"
-          />
-          {contentsText.trim().length > 0 && (
-            <Text style={s.sentenceCount}>
-              {splitSentences(contentsText).length} sentence
-              {splitSentences(contentsText).length !== 1 ? "s" : ""} detected
-            </Text>
+          {isTeacher && (
+            <View style={s.visibilityRow}>
+              <Text style={s.visibilityLabel}>Who can see this book?</Text>
+              <View style={s.visibilityOptions}>
+                {[
+                  {
+                    value: "private",
+                    label: "Only me",
+                    icon: "lock-closed-outline",
+                  },
+                  {
+                    value: "class",
+                    label: "My class",
+                    icon: "people-outline",
+                  },
+                  {
+                    value: "public",
+                    label: "Public",
+                    icon: "earth-outline",
+                  },
+                ].map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      s.visOpt,
+                      visibility === opt.value && s.visOptActive,
+                    ]}
+                    onPress={() => setVisibility(opt.value)}
+                  >
+                    <Ionicons
+                      name={opt.icon}
+                      size={scale(14)}
+                      color={visibility === opt.value ? "#fff" : "#888"}
+                    />
+                    <Text
+                      style={[
+                        s.visOptText,
+                        visibility === opt.value && s.visOptTextActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           )}
-        </View>
 
-        <TouchableOpacity
-          style={[s.uploadBtn, uploading && s.uploadBtnDisabled]}
-          onPress={handleUpload}
-          disabled={uploading}
-          activeOpacity={0.85}
-        >
-          {uploading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons
-                name="cloud-upload-outline"
-                size={scale(18)}
-                color="#fff"
-                style={{ marginRight: scale(8) }}
-              />
-              <Text style={s.uploadBtnText}>Upload</Text>
-            </>
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.uploadBtn, uploading && s.uploadBtnDisabled]}
+            onPress={handleUpload}
+            disabled={uploading}
+            activeOpacity={0.85}
+          >
+            {uploading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons
+                  name="cloud-upload-outline"
+                  size={scale(18)}
+                  color="#fff"
+                  style={{ marginRight: scale(8) }}
+                />
+                <Text style={s.uploadBtnText}>Upload</Text>
+              </>
+            )}
+          </TouchableOpacity>
 
-        <View style={{ height: verticalScale(40) }} />
-      </ScrollView>
+          <View style={{ height: verticalScale(40) }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* ── Image Source Modal ── */}
       <Modal
@@ -689,4 +780,46 @@ const getStyles = (scale, verticalScale) =>
       color: "#1a1a2e",
     },
     difficultyOptionTextSelected: { color: "#FF9149", fontWeight: "bold" },
+    visibilityRow: {
+      width: "100%",
+      marginBottom: verticalScale(16),
+    },
+    visibilityLabel: {
+      fontFamily: "Poppins",
+      fontSize: scale(13),
+      fontWeight: "bold",
+      color: "#555",
+      marginBottom: verticalScale(8),
+    },
+    visibilityOptions: {
+      flexDirection: "row",
+      gap: scale(8),
+    },
+    visOpt: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: scale(6),
+      paddingVertical: verticalScale(8),
+      borderRadius: scale(8),
+      borderWidth: 1.5,
+      borderColor: "#ddd",
+      backgroundColor: "#fafafa",
+    },
+    visOptActive: {
+      backgroundColor: "#FF9149",
+      borderColor: "#FF9149",
+    },
+    visOptText: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      color: "#888",
+    },
+    visOptTextActive: {
+      fontFamily: "Poppins",
+      fontSize: scale(12),
+      fontWeight: "bold",
+      color: "#fff",
+    },
   });
